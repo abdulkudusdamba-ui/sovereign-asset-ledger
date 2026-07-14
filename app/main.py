@@ -1,3 +1,6 @@
+from app.routers import certificate
+from app.routers import verification
+from app.routers.dashboard import router as dashboard_router
 from app.models.asset_registry import AssetRegistry
 from app.routers import asset_registry
 from app.models.farm import Farm
@@ -41,6 +44,9 @@ app = FastAPI(
 Base.metadata.create_all(bind=engine)
 
 # Register routers
+app.include_router(certificate.router)
+app.include_router(verification.router)
+app.include_router(dashboard_router)
 app.include_router(asset.router)
 app.include_router(user_router)
 app.include_router(land.router)

@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy.orm import Session
-
+from app.services.qr_service import generate_qr
 from app.models.asset_registry import AssetRegistry
 from app.enums.asset_types import AssetType
 
@@ -28,6 +28,7 @@ def register_asset(
 
     db.add(registry)
     db.commit()
-    db.refresh(registry)
-
+    db.refresh(registry)  
+    # Generate QR Code 
+    qr_path = generate_qr(registry.sal_id)
     return registry
