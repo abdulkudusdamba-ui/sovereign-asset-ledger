@@ -1,0 +1,27 @@
+from enum import Enum
+
+
+class AssetType(str, Enum):
+    LAND = "Land"
+    VEHICLE = "Vehicle"
+    GOLD = "Gold"
+    DIAMOND = "Diamond"
+    BANK_ACCOUNT = "Bank Account"
+    COMPANY = "Company"
+    STOCK = "Stock"
+    BOND = "Bond"
+    INSURANCE = "Insurance"
+    BUSINESS = "Business"
+    INTELLECTUAL_PROPERTY = "Intellectual Property"
+    CRYPTO_WALLET = "Crypto Wallet"
+    FARM = "Farm"
+    GOVERNMENT_ID = "Government ID"
+    LIVESTOCK = "Livestock"
+    MACHINERY = "Machinery"
+    AIRCRAFT = "Aircraft"
+    SHIP = "Ship"
+    LOAN = "Loan"
+    MORTGAGE = "Mortgage"
+    TAX = "Tax"
+    ART = "Art"
+    OTHER = "Other"
