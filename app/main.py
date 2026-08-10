@@ -1,3 +1,4 @@
+from app.routers import reporting
 from app.routers import payment_reconciliation
 from app.routers import webhook
 from app.routers import receipt
@@ -56,6 +57,7 @@ from app.models.payment_audit import PaymentAudit
 Base.metadata.create_all(bind=engine)
 
 # Register routers
+app.include_router(reporting.router)
 app.include_router(payment_reconciliation.router)
 app.include_router(webhook.router)
 app.include_router(receipt.router)
