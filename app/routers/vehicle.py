@@ -38,14 +38,22 @@ def create_vehicle(
     db.commit()
     db.refresh(new_vehicle)
 
-    # Register the vehicle in the SAL Master Registry
     register_asset(
-        db=db,
-        asset_type=AssetType.VEHICLE,
-        registry_id=new_vehicle.id,
-        owner=new_vehicle.owner,
-        estimated_value=new_vehicle.estimated_value,
-    )
+    db=db,
+    asset_type=AssetType.VEHICLE,
+    registry_id=new_vehicle.id,
+    owner=new_vehicle.owner,
+    estimated_value=new_vehicle.estimated_value,
+    asset_details={
+    "registration_number": new_vehicle.registration_number,
+    "vin": new_vehicle.vin,
+    "manufacturer": new_vehicle.manufacturer,
+    "model": new_vehicle.model,
+    "year": new_vehicle.year,
+    "engine_number": new_vehicle.engine_number,
+    "color": new_vehicle.color,
+},
+)
 
     return new_vehicle
 

@@ -21,6 +21,20 @@ class AssetRegistry(Base):
     estimated_value = Column(Float, nullable=True)
 
     status = Column(String, default="Active")
+    sal_verification = Column(
+        String,
+        default="VERIFIED"
+    )
+
+    government_verification = Column(
+        String,
+        default="NOT_VERIFIED"
+    )
+
+    blockchain_status = Column(
+        String,
+        default="PENDING"
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

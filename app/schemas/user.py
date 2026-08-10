@@ -1,12 +1,13 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
+
 # Create User
 class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
-    role: str = "viewer"
+
 
 # User Response
 class UserResponse(BaseModel):
@@ -18,15 +19,18 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # Login
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
 # JWT Token
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 # Token Payload
 class TokenData(BaseModel):

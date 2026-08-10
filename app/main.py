@@ -1,8 +1,18 @@
+from app.routers import payment_reconciliation
+from app.routers import webhook
+from app.routers import receipt
+from app.routers import payment
+from app.routers import invoice
+from app.routers import pricing
+from app.models.pricing import Pricing
+from app.models.country import Country
+from app.routers import government_verification
 from app.routers import certificate
-from app.routers import verification
+from app.routers import verification        
 from app.routers.dashboard import router as dashboard_router
 from app.models.asset_registry import AssetRegistry
 from app.routers import asset_registry
+from app.models.government_verification import GovernmentVerification
 from app.models.farm import Farm
 from app.routers import farm
 from app.models.crypto_wallet import CryptoWallet
@@ -39,13 +49,22 @@ app = FastAPI(
     title="Sovereign Asset Ledger",
     version="0.1.0"
 )
-
+from app.models.payment import Payment
+from app.models.receipt import Receipt
+from app.models.payment_audit import PaymentAudit
 # Create all database tables
 Base.metadata.create_all(bind=engine)
 
 # Register routers
+app.include_router(payment_reconciliation.router)
+app.include_router(webhook.router)
+app.include_router(receipt.router)
+app.include_router(payment.router)
+app.include_router(invoice.router)
+app.include_router(pricing.router)
 app.include_router(certificate.router)
 app.include_router(verification.router)
+app.include_router(government_verification.router)
 app.include_router(dashboard_router)
 app.include_router(asset.router)
 app.include_router(user_router)
