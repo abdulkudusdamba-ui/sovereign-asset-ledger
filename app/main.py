@@ -1,4 +1,16 @@
-from app.routers import settlement
+from fastapi import FastAPI
+
+from app.database.database import Base, engine
+
+# Core models — load these BEFORE routers
+from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
+from app.models.user import User
+from app.models.land import Land
+from app.models.payment import Payment
+from app.models.receipt import Receipt
+from app.models.payment_audit import PaymentAudit
+from app.routers import asset_transaction
 from app.routers import settlement
 from app.routers import reporting
 from app.routers import payment_reconciliation
@@ -59,6 +71,7 @@ from app.models.payment_audit import PaymentAudit
 Base.metadata.create_all(bind=engine)
 
 # Register routers
+app.include_router(asset_transaction.router)
 app.include_router(settlement.router)
 app.include_router(reporting.router)
 app.include_router(payment_reconciliation.router)
