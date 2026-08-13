@@ -93,7 +93,8 @@ class AssetTransactionService:
     def attach_payment(
         db: Session,
         transaction_id: int,
-        payment_id: int
+        payment_id: int,
+        commit: bool = True
     ) -> AssetTransaction | None:
 
         transaction = (
@@ -121,6 +122,7 @@ class AssetTransactionService:
         # Prevent attaching a different payment
         # to an already-linked asset transaction.
         if transaction.payment_id is not None:
+
             if transaction.payment_id != payment.id:
                 raise ValueError(
                     "Asset transaction is already linked "
@@ -145,7 +147,10 @@ class AssetTransactionService:
 
         transaction.payment_id = payment.id
 
-        db.commit()
-        db.refresh(transaction)
+        if commit:
+            db.commit()
+            db.refresh(transaction)
+        else:
+            db.flush()
 
         return transaction

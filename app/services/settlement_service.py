@@ -104,83 +104,69 @@ class SettlementService:
         payment_id: int
     ) -> dict:
 
-        result = SettlementService.get_settlement_status(
-            db=db,
-            payment_id=payment_id
-        )
-
-        if not result["settled"]:
-            return result
-
-        payment = (
-            db.query(Payment)
-            .filter(Payment.id == payment_id)
-            .first()
-        )
-
-        if not payment:
-            raise ValueError("Payment not found")
-
-        # -------------------------------------------------
-        # 1. Record PAYMENT_SETTLED audit
-        # -------------------------------------------------
-
-        existing_audit = (
-            db.query(PaymentAudit)
-            .filter(
-                PaymentAudit.payment_id == payment_id,
-                PaymentAudit.event == "PAYMENT_SETTLED"
-            )
-            .first()
-        )
-
-        if not existing_audit:
-            PaymentAuditService.log(
+        try:
+            result = SettlementService.get_settlement_status(
                 db=db,
-                payment_id=payment_id,
-                event="PAYMENT_SETTLED",
-                description=(
-                    "Payment financially settled. "
-                    "Payment is PAID, reconciliation is MATCHED, "
-                    "and ledger entry is posted."
-                )
+                payment_id=payment_id
             )
 
-        # -------------------------------------------------
-        # 2. Find the invoice
-        # -------------------------------------------------
+            if not result["settled"]:
+                return result
 
-        invoice = (
-            db.query(Invoice)
-            .filter(Invoice.id == payment.invoice_id)
-            .first()
-        )
+            payment = (
+                db.query(Payment)
+                .filter(Payment.id == payment_id)
+                .first()
+            )
 
-        if invoice:
+            if not payment:
+                raise ValueError("Payment not found")
 
-            # -------------------------------------------------
-            # 3. Identify linked asset transaction
-            #    using ASSET_TRANSACTION:<id>
-            # -------------------------------------------------
+            existing_audit = (
+                db.query(PaymentAudit)
+                .filter(
+                    PaymentAudit.payment_id == payment_id,
+                    PaymentAudit.event == "PAYMENT_SETTLED"
+                )
+                .first()
+            )
 
-            prefix = "ASSET_TRANSACTION:"
-
-            if (
-                invoice.service
-                and invoice.service.startswith(prefix)
-            ):
-                transaction_id_text = (
-                    invoice.service[len(prefix):]
+            if not existing_audit:
+                PaymentAuditService.log(
+                    db=db,
+                    payment_id=payment_id,
+                    event="PAYMENT_SETTLED",
+                    description=(
+                        "Payment financially settled. "
+                        "Payment is PAID, reconciliation is MATCHED, "
+                        "and ledger entry is posted."
+                    )
                 )
 
-                try:
-                    asset_transaction_id = int(
-                        transaction_id_text
-                    )
-                except ValueError:
-                    asset_transaction_id = None
+            invoice = (
+                db.query(Invoice)
+                .filter(Invoice.id == payment.invoice_id)
+                .first()
+            )
 
-                if asset_transaction_id is not None:
+            if invoice:
+                prefix = "ASSET_TRANSACTION:"
+
+                if (
+                    invoice.service
+                    and invoice.service.startswith(prefix)
+                ):
+                    transaction_id_text = invoice.service[len(prefix):]
+
+                    try:
+                        asset_transaction_id = int(
+                            transaction_id_text
+                        )
+                    except ValueError:
+                        raise ValueError(
+                            "Invalid asset transaction reference "
+                            "in invoice service"
+                        )
 
                     asset_transaction = (
                         db.query(AssetTransaction)
@@ -191,69 +177,93 @@ class SettlementService:
                         .first()
                     )
 
-                    if asset_transaction:
-
-                        # -------------------------------------------------
-                        # 4. Attach payment if not already attached
-                        # -------------------------------------------------
-
-                        if asset_transaction.payment_id is None:
-
-                            AssetTransactionService.attach_payment(
-                                db=db,
-                                transaction_id=asset_transaction.id,
-                                payment_id=payment.id
-                            )
-
-                            # attach_payment commits internally,
-                            # so refresh the object.
-                            db.refresh(asset_transaction)
-
-                        elif (
-                            asset_transaction.payment_id
-                            != payment.id
-                        ):
-                            raise ValueError(
-                                "Asset transaction is already "
-                                "linked to another payment."
-                            )
-
-                        # -------------------------------------------------
-                        # 5. Complete asset transaction
-                        # -------------------------------------------------
-
-                        if asset_transaction.status != "COMPLETED":
-
-                            asset_transaction.status = "COMPLETED"
-
-                        # -------------------------------------------------
-                        # 6. Record completion audit
-                        # -------------------------------------------------
-
-                        completion_audit = (
-                            db.query(PaymentAudit)
-                            .filter(
-                                PaymentAudit.payment_id
-                                == payment.id,
-                                PaymentAudit.event
-                                == "ASSET_TRANSACTION_COMPLETED"
-                            )
-                            .first()
+                    if not asset_transaction:
+                        raise ValueError(
+                            "Linked asset transaction not found"
                         )
 
-                        if not completion_audit:
+                    if asset_transaction.payment_id is None:
+                        AssetTransactionService.attach_payment(
+                            db=db,
+                            transaction_id=asset_transaction.id,
+                            payment_id=payment.id,
+                            commit=False
+                        )
 
-                            PaymentAuditService.log(
-                                db=db,
-                                payment_id=payment.id,
-                                event="ASSET_TRANSACTION_COMPLETED",
-                                description=(
-                                    f"Asset transaction "
-                                    f"{asset_transaction.id} "
-                                    f"completed after financial settlement."
-                                )
+                    elif (
+                        asset_transaction.payment_id
+                        != payment.id
+                    ):
+                        raise ValueError(
+                            "Asset transaction is already linked "
+                            "to another payment."
+                        )
+
+                    asset_transaction.status = "COMPLETED"
+
+                    completion_audit = (
+                        db.query(PaymentAudit)
+                        .filter(
+                            PaymentAudit.payment_id == payment.id,
+                            PaymentAudit.event
+                            == "ASSET_TRANSACTION_COMPLETED"
+                        )
+                        .first()
+                    )
+
+                    if not completion_audit:
+                        PaymentAuditService.log(
+                            db=db,
+                            payment_id=payment.id,
+                            event="ASSET_TRANSACTION_COMPLETED",
+                            description=(
+                                f"Asset transaction "
+                                f"{asset_transaction.id} "
+                                f"completed after financial settlement."
                             )
+                        )
 
-        db.commit()
+            # One final commit for this settlement operation
+            db.commit()
 
-        return 
+            reconciliation = (
+                db.query(PaymentReconciliation)
+                .filter(
+                    PaymentReconciliation.payment_id == payment.id
+                )
+                .first()
+            )
+
+            ledger_entry = (
+                db.query(LedgerEntry)
+                .filter(
+                    LedgerEntry.payment_id == payment.id,
+                    LedgerEntry.entry_type == "PAYMENT_RECEIVED"
+                )
+                .first()
+            )
+
+            return {
+                "payment_id": payment.id,
+                "status": "FINANCIALLY_SETTLED",
+                "settled": True,
+                "reason": (
+                    "Payment is PAID, reconciliation is MATCHED, "
+                    "and the payment is posted to the financial ledger."
+                ),
+                "transaction_id": payment.transaction_id,
+                "amount": float(payment.amount),
+                "currency": payment.currency,
+                "ledger_entry_id": (
+                    ledger_entry.id
+                    if ledger_entry else None
+                ),
+                "reconciliation_id": (
+                    reconciliation.id
+                    if reconciliation else None
+                )
+            }
+
+        except Exception:
+            db.rollback()
+            raise
