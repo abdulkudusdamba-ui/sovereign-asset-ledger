@@ -11,12 +11,9 @@ class AssetTransactionInvoiceService:
     @staticmethod
     def create_invoice(
         db: Session,
-        transaction_id: int
+        transaction_id: int,
+        commit: bool = True
     ) -> Invoice:
-
-        # -------------------------------------------------
-        # 1. Find asset transaction
-        # -------------------------------------------------
 
         transaction = (
             db.query(AssetTransaction)
@@ -31,30 +28,10 @@ class AssetTransactionInvoiceService:
                 "Asset transaction not found"
             )
 
-        # -------------------------------------------------
-        # 2. Transaction must not already have a payment
-        # -------------------------------------------------
-        # A payment means the transaction is already inside
-        # the financial workflow. Do not create another
-        # invoice accidentally.
-        # -------------------------------------------------
-
         if transaction.payment_id is not None:
-
             raise ValueError(
                 "Asset transaction already has a payment"
             )
-
-        # -------------------------------------------------
-        # 3. Check whether an invoice already exists
-        # -------------------------------------------------
-        # The current Invoice model does not have an
-        # asset_transaction_id column, so we cannot create
-        # a direct database relationship yet.
-        #
-        # For now, use the transaction ID in the service
-        # description as the controlled reference.
-        # -------------------------------------------------
 
         existing_invoice = (
             db.query(Invoice)
@@ -66,12 +43,7 @@ class AssetTransactionInvoiceService:
         )
 
         if existing_invoice:
-
             return existing_invoice
-
-        # -------------------------------------------------
-        # 4. Calculate invoice amount
-        # -------------------------------------------------
 
         subtotal = float(transaction.amount)
 
@@ -84,19 +56,11 @@ class AssetTransactionInvoiceService:
             discount=discount
         )
 
-        # -------------------------------------------------
-        # 5. Determine customer
-        # -------------------------------------------------
-
         customer = (
             transaction.buyer
             or transaction.seller
             or "SAL Customer"
         )
-
-        # -------------------------------------------------
-        # 6. Create invoice
-        # -------------------------------------------------
 
         invoice = Invoice(
             invoice_number=(
@@ -116,7 +80,10 @@ class AssetTransactionInvoiceService:
 
         db.add(invoice)
 
-        db.commit()
-        db.refresh(invoice)
+        if commit:
+            db.commit()
+            db.refresh(invoice)
+        else:
+            db.flush()
 
         return invoice

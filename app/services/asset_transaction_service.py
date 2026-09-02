@@ -16,7 +16,8 @@ class AssetTransactionService:
         buyer: str | None,
         amount: float,
         currency: str = "GHS",
-        description: str | None = None
+        description: str | None = None,
+        commit: bool = True
     ) -> AssetTransaction:
 
         transaction = AssetTransaction(
@@ -32,8 +33,12 @@ class AssetTransactionService:
         )
 
         db.add(transaction)
-        db.commit()
-        db.refresh(transaction)
+
+        if commit:
+            db.commit()
+            db.refresh(transaction)
+        else:
+            db.flush()
 
         return transaction
 
