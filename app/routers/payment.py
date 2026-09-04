@@ -8,16 +8,20 @@ from app.database.database import get_db
 from app.models.invoice import Invoice
 from app.models.payment import Payment
 from app.models.receipt import Receipt
+from app.models.payment_audit import PaymentAudit
 
 from app.schemas.payment import (
     PaymentCreate,
     PaymentResponse,
-    PaymentStatusUpdate,
 )
 
 from app.services.payment_service import PaymentService
 from app.services.receipt_service import ReceiptService
 from app.services.payment_audit_service import PaymentAuditService
+from app.services.payment_reconciliation_service import (
+    PaymentReconciliationService,
+)
+from app.services.settlement_service import SettlementService
 
 from app.providers.provider_factory import PaymentProviderFactory
 
@@ -28,10 +32,6 @@ router = APIRouter(
 )
 
 
-# ==========================================================
-# CREATE PAYMENT
-# ==========================================================
-
 @router.post(
     "/",
     response_model=PaymentResponse
@@ -40,51 +40,128 @@ def create_payment(
     request: PaymentCreate,
     db: Session = Depends(get_db)
 ):
+    """
+    Create a pending payment.
 
-    invoice = (
-        db.query(Invoice)
-        .filter(Invoice.id == request.invoice_id)
-        .first()
-    )
+    The client requests a payment.
 
-    if not invoice:
-        raise HTTPException(
-            status_code=404,
-            detail="Invoice not found"
+    The client does NOT determine whether the payment
+    becomes PAID.
+    """
+
+    try:
+        invoice = (
+            db.query(Invoice)
+            .filter(
+                Invoice.id == request.invoice_id
+            )
+            .first()
         )
 
-    payment = Payment(
-        invoice_id=request.invoice_id,
-        transaction_id=PaymentService.generate_transaction_id(),
-        provider=request.provider,
-        payment_method=request.payment_method,
-        currency=request.currency,
-        amount=request.amount,
-        status="PENDING"
-    )
+        if not invoice:
+            raise HTTPException(
+                status_code=404,
+                detail="Invoice not found"
+            )
 
-    provider = PaymentProviderFactory.get_provider("sandbox")
-    provider.initialize_payment(payment)
+        if not request.currency:
+            raise HTTPException(
+                status_code=400,
+                detail="Payment currency is required"
+            )
 
-    db.add(payment)
-    db.commit()
-    db.refresh(payment)
+        if (
+            invoice.currency
+            and request.currency.upper()
+            != invoice.currency.upper()
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Payment currency does not match "
+                    "invoice currency"
+                )
+            )
 
-    PaymentAuditService.log(
-        db=db,
-        payment_id=payment.id,
-        event="PAYMENT_CREATED",
-        description="Payment initialized."
-    )
+        requested_amount = float(request.amount)
+        invoice_total = float(invoice.total)
 
-    db.commit()
+        if requested_amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Payment amount must be greater than zero"
+                )
+            )
 
-    return payment
+        if abs(
+            requested_amount - invoice_total
+        ) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Payment amount must match "
+                    "invoice total"
+                )
+            )
 
+        payment = PaymentService.create_payment(
+            db=db,
+            invoice_id=invoice.id,
+            provider=request.provider,
+            payment_method=request.payment_method,
+            commit=False
+        )
 
-# ==========================================================
-# GET ALL PAYMENTS
-# ==========================================================
+        provider = PaymentProviderFactory.get_provider(
+            request.provider
+        )
+
+        provider.initialize_payment(payment)
+
+        existing_created_audit = (
+            db.query(PaymentAudit)
+            .filter(
+                PaymentAudit.payment_id == payment.id,
+                PaymentAudit.event == "PAYMENT_CREATED"
+            )
+            .first()
+        )
+
+        if existing_created_audit is None:
+            PaymentAuditService.log(
+                db=db,
+                payment_id=payment.id,
+                event="PAYMENT_CREATED",
+                description=(
+                    f"Payment initialized using provider "
+                    f"{request.provider}."
+                )
+            )
+
+        db.commit()
+        db.refresh(payment)
+
+        return payment
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc)
+        )
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to create payment"
+        )
+
 
 @router.get(
     "/",
@@ -93,12 +170,12 @@ def create_payment(
 def get_payments(
     db: Session = Depends(get_db)
 ):
-    return db.query(Payment).all()
+    return (
+        db.query(Payment)
+        .order_by(Payment.id.desc())
+        .all()
+    )
 
-
-# ==========================================================
-# GET SINGLE PAYMENT
-# ==========================================================
 
 @router.get(
     "/{payment_id}",
@@ -108,10 +185,11 @@ def get_payment(
     payment_id: int,
     db: Session = Depends(get_db)
 ):
-
     payment = (
         db.query(Payment)
-        .filter(Payment.id == payment_id)
+        .filter(
+            Payment.id == payment_id
+        )
         .first()
     )
 
@@ -124,55 +202,184 @@ def get_payment(
     return payment
 
 
-# ==========================================================
-# UPDATE PAYMENT STATUS
-# ==========================================================
-
-@router.patch(
-    "/{payment_id}/status",
+@router.post(
+    "/{payment_id}/verify",
     response_model=PaymentResponse
 )
-def update_payment_status(
+def verify_payment(
     payment_id: int,
-    request: PaymentStatusUpdate,
     db: Session = Depends(get_db)
 ):
+    """
+    Verify a payment through its configured provider.
 
-    payment = (
-        db.query(Payment)
-        .filter(Payment.id == payment_id)
-        .first()
-    )
+    The caller cannot directly declare:
 
-    if not payment:
-        raise HTTPException(
-            status_code=404,
-            detail="Payment not found"
-        )
+        PAID
+        FAILED
+        REFUNDED
 
-    payment.status = request.status
+    The provider verification result is the authority
+    used to transition the payment state.
 
-    if request.provider_reference:
-        payment.provider_reference = request.provider_reference
+    For a PAID payment:
 
-    if request.status == "PAID":
+        Provider verification
+                ↓
+        Payment = PAID
+                ↓
+        Invoice = PAID
+                ↓
+        Receipt
+                ↓
+        Reconciliation
+                ↓
+        Ledger
+                ↓
+        Settlement
+                ↓
+        Asset Transaction = COMPLETED
 
-        payment.paid_at = datetime.utcnow()
+    All changes occur inside one transaction.
+    """
 
-        invoice = (
-            db.query(Invoice)
-            .filter(Invoice.id == payment.invoice_id)
+    try:
+        payment = (
+            db.query(Payment)
+            .filter(
+                Payment.id == payment_id
+            )
             .first()
         )
 
-        if invoice:
+        if not payment:
+            raise HTTPException(
+                status_code=404,
+                detail="Payment not found"
+            )
+
+        provider = PaymentProviderFactory.get_provider(
+            payment.provider
+        )
+
+        result = provider.verify_payment(payment)
+
+        if result is None:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Payment provider returned no "
+                    "verification result"
+                )
+            )
+
+        if isinstance(result, dict):
+            provider_status = result.get("status")
+            provider_reference = result.get(
+                "provider_reference"
+            )
+        else:
+            provider_status = getattr(
+                result,
+                "status",
+                None
+            )
+            provider_reference = getattr(
+                result,
+                "provider_reference",
+                None
+            )
+
+        if not provider_status:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Payment provider returned an "
+                    "invalid status"
+                )
+            )
+
+        provider_status = str(
+            provider_status
+        ).upper()
+
+        allowed_statuses = {
+            "PENDING",
+            "PAID",
+            "FAILED",
+            "REFUNDED",
+        }
+
+        if provider_status not in allowed_statuses:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Unsupported provider payment status: "
+                    f"{provider_status}"
+                )
+            )
+
+        payment.status = provider_status
+
+        if provider_reference:
+            payment.provider_reference = (
+                provider_reference
+            )
+
+        if provider_status == "PAID":
+            payment.paid_at = datetime.utcnow()
+
+        # =====================================================
+        # PAID
+        # =====================================================
+
+        if provider_status == "PAID":
+
+            invoice = (
+                db.query(Invoice)
+                .filter(
+                    Invoice.id
+                    == payment.invoice_id
+                )
+                .first()
+            )
+
+            if not invoice:
+                raise ValueError(
+                    "Invoice not found for payment"
+                )
+
+            if (
+                invoice.currency.upper()
+                != payment.currency.upper()
+            ):
+                raise ValueError(
+                    "Payment currency does not match "
+                    "invoice currency"
+                )
+
+            if abs(
+                float(payment.amount)
+                - float(invoice.total)
+            ) > 0.01:
+                raise ValueError(
+                    "Payment amount does not match "
+                    "invoice total"
+                )
 
             invoice.status = "PAID"
             invoice.paid_at = payment.paid_at
 
+            # -------------------------------------------------
+            # RECEIPT
+            # -------------------------------------------------
+
             existing_receipt = (
                 db.query(Receipt)
-                .filter(Receipt.payment_id == payment.id)
+                .filter(
+                    Receipt.payment_id
+                    == payment.id
+                )
                 .first()
             )
 
@@ -180,7 +387,11 @@ def update_payment_status(
 
                 receipt = Receipt(
                     payment_id=payment.id,
-                    receipt_number=ReceiptService.generate_receipt_number(db),
+                    receipt_number=(
+                        ReceiptService.generate_receipt_number(
+                            db
+                        )
+                    ),
                     customer=invoice.customer,
                     currency=invoice.currency,
                     amount=payment.amount
@@ -188,39 +399,191 @@ def update_payment_status(
 
                 db.add(receipt)
 
+                existing_receipt_audit = (
+                    db.query(PaymentAudit)
+                    .filter(
+                        PaymentAudit.payment_id
+                        == payment.id,
+                        PaymentAudit.event
+                        == "RECEIPT_GENERATED"
+                    )
+                    .first()
+                )
+
+                if existing_receipt_audit is None:
+                    PaymentAuditService.log(
+                        db=db,
+                        payment_id=payment.id,
+                        event="RECEIPT_GENERATED",
+                        description=(
+                            f"Receipt "
+                            f"{receipt.receipt_number} "
+                            f"generated."
+                        )
+                    )
+
+            # -------------------------------------------------
+            # PAYMENT PAID AUDIT
+            # -------------------------------------------------
+
+            existing_paid_audit = (
+                db.query(PaymentAudit)
+                .filter(
+                    PaymentAudit.payment_id
+                    == payment.id,
+                    PaymentAudit.event
+                    == "PAYMENT_PAID"
+                )
+                .first()
+            )
+
+            if existing_paid_audit is None:
                 PaymentAuditService.log(
                     db=db,
                     payment_id=payment.id,
-                    event="RECEIPT_GENERATED",
-                    description=f"Receipt {receipt.receipt_number} generated."
+                    event="PAYMENT_PAID",
+                    description=(
+                        "Payment verified as PAID by "
+                        "the payment provider."
+                    )
                 )
 
-        PaymentAuditService.log(
-            db=db,
-            payment_id=payment.id,
-            event="PAYMENT_PAID",
-            description="Payment marked as PAID."
+            db.flush()
+
+            # -------------------------------------------------
+            # RECONCILIATION
+            # -------------------------------------------------
+
+            PaymentReconciliationService.reconcile_payment(
+                db=db,
+                payment_id=payment.id,
+                commit=False
+            )
+
+            # -------------------------------------------------
+            # SETTLEMENT
+            # -------------------------------------------------
+
+            SettlementService.settle_payment(
+                db=db,
+                payment_id=payment.id,
+                commit=False
+            )
+
+            # -------------------------------------------------
+            # ONE FINAL COMMIT
+            # -------------------------------------------------
+
+            db.commit()
+
+        # =====================================================
+        # FAILED
+        # =====================================================
+
+        elif provider_status == "FAILED":
+
+            existing_failed_audit = (
+                db.query(PaymentAudit)
+                .filter(
+                    PaymentAudit.payment_id
+                    == payment.id,
+                    PaymentAudit.event
+                    == "PAYMENT_FAILED"
+                )
+                .first()
+            )
+
+            if existing_failed_audit is None:
+                PaymentAuditService.log(
+                    db=db,
+                    payment_id=payment.id,
+                    event="PAYMENT_FAILED",
+                    description=(
+                        "Payment verified as FAILED by "
+                        "the payment provider."
+                    )
+                )
+
+            db.commit()
+
+        # =====================================================
+        # REFUNDED
+        # =====================================================
+
+        elif provider_status == "REFUNDED":
+
+            existing_refunded_audit = (
+                db.query(PaymentAudit)
+                .filter(
+                    PaymentAudit.payment_id
+                    == payment.id,
+                    PaymentAudit.event
+                    == "PAYMENT_REFUNDED"
+                )
+                .first()
+            )
+
+            if existing_refunded_audit is None:
+                PaymentAuditService.log(
+                    db=db,
+                    payment_id=payment.id,
+                    event="PAYMENT_REFUNDED",
+                    description=(
+                        "Payment verified as REFUNDED by "
+                        "the payment provider."
+                    )
+                )
+
+            db.commit()
+
+        # =====================================================
+        # PENDING
+        # =====================================================
+
+        else:
+
+            existing_pending_audit = (
+                db.query(PaymentAudit)
+                .filter(
+                    PaymentAudit.payment_id
+                    == payment.id,
+                    PaymentAudit.event
+                    == "PAYMENT_PENDING"
+                )
+                .first()
+            )
+
+            if existing_pending_audit is None:
+                PaymentAuditService.log(
+                    db=db,
+                    payment_id=payment.id,
+                    event="PAYMENT_PENDING",
+                    description=(
+                        "Payment remains PENDING after "
+                        "provider verification."
+                    )
+                )
+
+            db.commit()
+
+        db.refresh(payment)
+
+        return payment
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc)
         )
 
-    elif request.status == "FAILED":
-
-        PaymentAuditService.log(
-            db=db,
-            payment_id=payment.id,
-            event="PAYMENT_FAILED",
-            description="Payment failed."
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to verify payment"
         )
-
-    elif request.status == "REFUNDED":
-
-        PaymentAuditService.log(
-            db=db,
-            payment_id=payment.id,
-            event="PAYMENT_REFUNDED",
-            description="Payment refunded."
-        )
-
-    db.commit()
-    db.refresh(payment)
-
-    return payment
