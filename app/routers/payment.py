@@ -7,7 +7,6 @@ from app.database.database import get_db
 
 from app.models.invoice import Invoice
 from app.models.payment import Payment
-from app.models.receipt import Receipt
 from app.models.payment_audit import PaymentAudit
 
 from app.schemas.payment import (
@@ -16,7 +15,7 @@ from app.schemas.payment import (
 )
 
 from app.services.payment_service import PaymentService
-from app.services.receipt_service import ReceiptService
+from app.services.payment_state_service import PaymentStateService
 from app.services.payment_audit_service import PaymentAuditService
 from app.services.payment_reconciliation_service import (
     PaymentReconciliationService,
@@ -89,9 +88,7 @@ def create_payment(
         if requested_amount <= 0:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Payment amount must be greater than zero"
-                )
+                detail="Payment amount must be greater than zero"
             )
 
         if abs(
@@ -210,39 +207,6 @@ def verify_payment(
     payment_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Verify a payment through its configured provider.
-
-    The caller cannot directly declare:
-
-        PAID
-        FAILED
-        REFUNDED
-
-    The provider verification result is the authority
-    used to transition the payment state.
-
-    For a PAID payment:
-
-        Provider verification
-                ↓
-        Payment = PAID
-                ↓
-        Invoice = PAID
-                ↓
-        Receipt
-                ↓
-        Reconciliation
-                ↓
-        Ledger
-                ↓
-        Settlement
-                ↓
-        Asset Transaction = COMPLETED
-
-    All changes occur inside one transaction.
-    """
-
     try:
         payment = (
             db.query(Payment)
@@ -262,72 +226,51 @@ def verify_payment(
             payment.provider
         )
 
-        result = provider.verify_payment(payment)
+        provider_result = provider.verify_payment(
+            payment.transaction_id
+        )
 
-        if result is None:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "Payment provider returned no "
-                    "verification result"
-                )
+        if not isinstance(provider_result, dict):
+            raise ValueError(
+                "Invalid payment provider response"
             )
 
-        if isinstance(result, dict):
-            provider_status = result.get("status")
-            provider_reference = result.get(
-                "provider_reference"
-            )
-        else:
-            provider_status = getattr(
-                result,
-                "status",
-                None
-            )
-            provider_reference = getattr(
-                result,
-                "provider_reference",
-                None
+        if provider_result.get("success") is False:
+            raise ValueError(
+                "Payment provider verification failed"
             )
 
-        if not provider_status:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "Payment provider returned an "
-                    "invalid status"
-                )
+        provider_transaction_id = provider_result.get(
+            "transaction_id"
+        )
+
+        if not provider_transaction_id:
+            raise ValueError(
+                "Payment provider response is missing transaction_id"
             )
 
-        provider_status = str(
-            provider_status
-        ).upper()
-
-        allowed_statuses = {
-            "PENDING",
-            "PAID",
-            "FAILED",
-            "REFUNDED",
-        }
-
-        if provider_status not in allowed_statuses:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Unsupported provider payment status: "
-                    f"{provider_status}"
-                )
+        if provider_transaction_id != payment.transaction_id:
+            raise ValueError(
+                "Payment provider transaction ID does not match payment"
             )
 
-        payment.status = provider_status
+        provider_status = PaymentStateService.normalize_status(
+            provider_result.get("status")
+        )
+
+        PaymentStateService.transition(
+            db=db,
+            payment_id=payment.id,
+            new_status=provider_status,
+            commit=False
+        )
+
+        provider_reference = provider_result.get(
+            "provider_reference"
+        )
 
         if provider_reference:
-            payment.provider_reference = (
-                provider_reference
-            )
-
-        if provider_status == "PAID":
-            payment.paid_at = datetime.utcnow()
+            payment.provider_reference = provider_reference
 
         # =====================================================
         # PAID
@@ -335,104 +278,68 @@ def verify_payment(
 
         if provider_status == "PAID":
 
+            if payment.paid_at is None:
+                payment.paid_at = datetime.utcnow()
+
             invoice = (
                 db.query(Invoice)
                 .filter(
-                    Invoice.id
-                    == payment.invoice_id
+                    Invoice.id == payment.invoice_id
                 )
                 .first()
             )
 
             if not invoice:
                 raise ValueError(
-                    "Invoice not found for payment"
+                    "Invoice not found"
                 )
 
-            if (
-                invoice.currency.upper()
-                != payment.currency.upper()
-            ):
+            if payment.amount != invoice.total:
                 raise ValueError(
-                    "Payment currency does not match "
-                    "invoice currency"
+                    "Payment amount does not match invoice total"
                 )
 
-            if abs(
-                float(payment.amount)
-                - float(invoice.total)
-            ) > 0.01:
+            if payment.currency.upper() != invoice.currency.upper():
                 raise ValueError(
-                    "Payment amount does not match "
-                    "invoice total"
+                    "Payment currency does not match invoice currency"
                 )
 
             invoice.status = "PAID"
             invoice.paid_at = payment.paid_at
 
             # -------------------------------------------------
-            # RECEIPT
+            # Receipt audit
             # -------------------------------------------------
 
             existing_receipt = (
-                db.query(Receipt)
+                db.query(PaymentAudit)
                 .filter(
-                    Receipt.payment_id
-                    == payment.id
+                    PaymentAudit.payment_id == payment.id,
+                    PaymentAudit.event == "RECEIPT_GENERATED"
                 )
                 .first()
             )
 
             if existing_receipt is None:
-
-                receipt = Receipt(
+                PaymentAuditService.log(
+                    db=db,
                     payment_id=payment.id,
-                    receipt_number=(
-                        ReceiptService.generate_receipt_number(
-                            db
-                        )
-                    ),
-                    customer=invoice.customer,
-                    currency=invoice.currency,
-                    amount=payment.amount
-                )
-
-                db.add(receipt)
-
-                existing_receipt_audit = (
-                    db.query(PaymentAudit)
-                    .filter(
-                        PaymentAudit.payment_id
-                        == payment.id,
-                        PaymentAudit.event
-                        == "RECEIPT_GENERATED"
+                    event="RECEIPT_GENERATED",
+                    description=(
+                        "Receipt generated after successful "
+                        "payment verification."
                     )
-                    .first()
                 )
-
-                if existing_receipt_audit is None:
-                    PaymentAuditService.log(
-                        db=db,
-                        payment_id=payment.id,
-                        event="RECEIPT_GENERATED",
-                        description=(
-                            f"Receipt "
-                            f"{receipt.receipt_number} "
-                            f"generated."
-                        )
-                    )
 
             # -------------------------------------------------
-            # PAYMENT PAID AUDIT
+            # Payment paid audit
             # -------------------------------------------------
 
             existing_paid_audit = (
                 db.query(PaymentAudit)
                 .filter(
-                    PaymentAudit.payment_id
-                    == payment.id,
-                    PaymentAudit.event
-                    == "PAYMENT_PAID"
+                    PaymentAudit.payment_id == payment.id,
+                    PaymentAudit.event == "PAYMENT_PAID"
                 )
                 .first()
             )
@@ -448,10 +355,8 @@ def verify_payment(
                     )
                 )
 
-            db.flush()
-
             # -------------------------------------------------
-            # RECONCILIATION
+            # Reconciliation
             # -------------------------------------------------
 
             PaymentReconciliationService.reconcile_payment(
@@ -461,7 +366,7 @@ def verify_payment(
             )
 
             # -------------------------------------------------
-            # SETTLEMENT
+            # Settlement
             # -------------------------------------------------
 
             SettlementService.settle_payment(
@@ -469,12 +374,6 @@ def verify_payment(
                 payment_id=payment.id,
                 commit=False
             )
-
-            # -------------------------------------------------
-            # ONE FINAL COMMIT
-            # -------------------------------------------------
-
-            db.commit()
 
         # =====================================================
         # FAILED
@@ -485,10 +384,8 @@ def verify_payment(
             existing_failed_audit = (
                 db.query(PaymentAudit)
                 .filter(
-                    PaymentAudit.payment_id
-                    == payment.id,
-                    PaymentAudit.event
-                    == "PAYMENT_FAILED"
+                    PaymentAudit.payment_id == payment.id,
+                    PaymentAudit.event == "PAYMENT_FAILED"
                 )
                 .first()
             )
@@ -504,8 +401,6 @@ def verify_payment(
                     )
                 )
 
-            db.commit()
-
         # =====================================================
         # REFUNDED
         # =====================================================
@@ -515,10 +410,8 @@ def verify_payment(
             existing_refunded_audit = (
                 db.query(PaymentAudit)
                 .filter(
-                    PaymentAudit.payment_id
-                    == payment.id,
-                    PaymentAudit.event
-                    == "PAYMENT_REFUNDED"
+                    PaymentAudit.payment_id == payment.id,
+                    PaymentAudit.event == "PAYMENT_REFUNDED"
                 )
                 .first()
             )
@@ -534,21 +427,17 @@ def verify_payment(
                     )
                 )
 
-            db.commit()
-
         # =====================================================
         # PENDING
         # =====================================================
 
-        else:
+        elif provider_status == "PENDING":
 
             existing_pending_audit = (
                 db.query(PaymentAudit)
                 .filter(
-                    PaymentAudit.payment_id
-                    == payment.id,
-                    PaymentAudit.event
-                    == "PAYMENT_PENDING"
+                    PaymentAudit.payment_id == payment.id,
+                    PaymentAudit.event == "PAYMENT_PENDING"
                 )
                 .first()
             )
@@ -564,8 +453,7 @@ def verify_payment(
                     )
                 )
 
-            db.commit()
-
+        db.commit()
         db.refresh(payment)
 
         return payment

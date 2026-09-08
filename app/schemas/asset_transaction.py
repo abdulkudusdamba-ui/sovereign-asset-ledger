@@ -1,6 +1,9 @@
 from pydantic import BaseModel
 from typing import Optional
 
+from app.schemas.invoice import InvoiceResponse
+from app.schemas.payment import PaymentResponse
+
 
 class AssetTransactionCreate(BaseModel):
     asset_id: Optional[int] = None
@@ -28,3 +31,9 @@ class AssetTransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AssetTransactionWorkflowResponse(BaseModel):
+    transaction: AssetTransactionResponse
+    invoice: InvoiceResponse
+    payment: PaymentResponse

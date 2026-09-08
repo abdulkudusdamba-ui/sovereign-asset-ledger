@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel
 
 
 class PaymentCreate(BaseModel):
@@ -26,8 +27,3 @@ class PaymentResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class PaymentStatusUpdate(BaseModel):
-    status: str
-    provider_reference: Optional[str] = None

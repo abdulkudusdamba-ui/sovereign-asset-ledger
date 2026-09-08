@@ -2,12 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
+
 from app.schemas.asset_transaction import (
     AssetTransactionCreate,
-    AssetTransactionResponse
+    AssetTransactionResponse,
+    AssetTransactionWorkflowResponse
 )
+
 from app.services.asset_transaction_service import (
     AssetTransactionService
+)
+
+from app.services.asset_transaction_workflow_service import (
+    AssetTransactionWorkflowService
 )
 
 
@@ -17,26 +24,42 @@ router = APIRouter(
 )
 
 
+# ==========================================================
+# CREATE COMPLETE ASSET TRANSACTION WORKFLOW
+# Transaction -> Invoice -> Payment -> Attach Payment
+# ==========================================================
+
 @router.post(
     "/",
-    response_model=AssetTransactionResponse
+    response_model=AssetTransactionWorkflowResponse
 )
 def create_asset_transaction(
     request: AssetTransactionCreate,
     db: Session = Depends(get_db)
 ):
-    return AssetTransactionService.create_transaction(
-        db=db,
-        asset_id=request.asset_id,
-        asset_type=request.asset_type,
-        transaction_type=request.transaction_type,
-        seller=request.seller,
-        buyer=request.buyer,
-        amount=request.amount,
-        currency=request.currency,
-        description=request.description
-    )
+    try:
+        return AssetTransactionWorkflowService.create_workflow(
+            db=db,
+            asset_id=request.asset_id,
+            asset_type=request.asset_type,
+            transaction_type=request.transaction_type,
+            seller=request.seller,
+            buyer=request.buyer,
+            amount=request.amount,
+            currency=request.currency,
+            description=request.description
+        )
 
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc)
+        )
+
+
+# ==========================================================
+# GET ALL ASSET TRANSACTIONS
+# ==========================================================
 
 @router.get(
     "/",
@@ -47,6 +70,10 @@ def get_asset_transactions(
 ):
     return AssetTransactionService.list_transactions(db)
 
+
+# ==========================================================
+# GET SINGLE ASSET TRANSACTION
+# ==========================================================
 
 @router.get(
     "/{transaction_id}",
@@ -70,6 +97,10 @@ def get_asset_transaction(
     return transaction
 
 
+# ==========================================================
+# UPDATE TRANSACTION STATUS
+# ==========================================================
+
 @router.patch(
     "/{transaction_id}/status",
     response_model=AssetTransactionResponse
@@ -92,6 +123,12 @@ def update_asset_transaction_status(
         )
 
     return transaction
+
+
+# ==========================================================
+# MANUALLY ATTACH PAYMENT
+# ==========================================================
+
 @router.patch(
     "/{transaction_id}/payment/{payment_id}",
     response_model=AssetTransactionResponse

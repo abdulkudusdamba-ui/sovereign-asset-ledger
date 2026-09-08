@@ -12,7 +12,8 @@ class LedgerService:
     @staticmethod
     def record_payment(
         db: Session,
-        payment_id: int
+        payment_id: int,
+        commit: bool = True
     ):
 
         payment = (
@@ -63,7 +64,11 @@ class LedgerService:
         )
 
         db.add(entry)
-        db.commit()
-        db.refresh(entry)
+
+        if commit:
+            db.commit()
+            db.refresh(entry)
+        else:
+            db.flush()
 
         return entry
