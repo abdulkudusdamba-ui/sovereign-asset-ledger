@@ -33,11 +33,14 @@ class AssetTransactionInvoiceService:
                 "Asset transaction already has a payment"
             )
 
+        # ---------------------------------------------------------
+        # 1. Preferred relationship:
+        #    Invoice.asset_transaction_id
+        # ---------------------------------------------------------
         existing_invoice = (
             db.query(Invoice)
             .filter(
-                Invoice.service ==
-                f"ASSET_TRANSACTION:{transaction.id}"
+                Invoice.asset_transaction_id == transaction.id
             )
             .first()
         )
@@ -45,6 +48,39 @@ class AssetTransactionInvoiceService:
         if existing_invoice:
             return existing_invoice
 
+        # ---------------------------------------------------------
+        # 2. Legacy compatibility:
+        #    Older invoices used:
+        #    service = "ASSET_TRANSACTION:<id>"
+        #
+        #    If one exists, connect it to the new column.
+        # ---------------------------------------------------------
+        legacy_service = (
+            f"ASSET_TRANSACTION:{transaction.id}"
+        )
+
+        existing_invoice = (
+            db.query(Invoice)
+            .filter(
+                Invoice.service == legacy_service
+            )
+            .first()
+        )
+
+        if existing_invoice:
+            existing_invoice.asset_transaction_id = transaction.id
+
+            if commit:
+                db.commit()
+                db.refresh(existing_invoice)
+            else:
+                db.flush()
+
+            return existing_invoice
+
+        # ---------------------------------------------------------
+        # 3. Create a new invoice.
+        # ---------------------------------------------------------
         subtotal = float(transaction.amount)
 
         tax = 0.0
@@ -67,9 +103,13 @@ class AssetTransactionInvoiceService:
                 InvoiceService.generate_invoice_number(db)
             ),
             customer=customer,
-            service=(
-                f"ASSET_TRANSACTION:{transaction.id}"
-            ),
+
+            # Keep service as a readable description.
+            service=legacy_service,
+
+            # Actual application-level relationship.
+            asset_transaction_id=transaction.id,
+
             currency=transaction.currency,
             subtotal=subtotal,
             tax=tax,

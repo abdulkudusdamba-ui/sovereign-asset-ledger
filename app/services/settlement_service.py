@@ -202,34 +202,22 @@ class SettlementService:
                 )
 
             # -------------------------------------------------
-            # 4. Process linked asset transaction
+            # 4. Find linked asset transaction
+            #
+            # NEW PRIMARY METHOD:
+            # Invoice.asset_transaction_id
+            #
+            # We no longer parse Invoice.service to determine
+            # the transaction relationship.
             # -------------------------------------------------
 
-            prefix = "ASSET_TRANSACTION:"
-
-            if (
-                invoice.service
-                and invoice.service.startswith(prefix)
-            ):
-                transaction_id_text = (
-                    invoice.service[len(prefix):]
-                )
-
-                try:
-                    asset_transaction_id = int(
-                        transaction_id_text
-                    )
-                except ValueError:
-                    raise ValueError(
-                        "Invalid asset transaction reference "
-                        "in invoice service"
-                    )
+            if invoice.asset_transaction_id is not None:
 
                 asset_transaction = (
                     db.query(AssetTransaction)
                     .filter(
                         AssetTransaction.id
-                        == asset_transaction_id
+                        == invoice.asset_transaction_id
                     )
                     .first()
                 )
@@ -240,7 +228,7 @@ class SettlementService:
                     )
 
                 # -------------------------------------------------
-                # 5. Verify the transaction amount/currency
+                # 5. Verify transaction amount/currency
                 # -------------------------------------------------
 
                 if abs(
@@ -253,8 +241,8 @@ class SettlementService:
                     )
 
                 if (
-                    asset_transaction.currency.upper()
-                    != payment.currency.upper()
+                    asset_transaction.currency.strip().upper()
+                    != payment.currency.strip().upper()
                 ):
                     raise ValueError(
                         "Asset transaction currency does not "
@@ -286,7 +274,7 @@ class SettlementService:
                 # -------------------------------------------------
                 # 7. Complete asset transaction
                 #
-                # Only financial settlement can reach this point.
+                # Only financially settled payments reach here.
                 # -------------------------------------------------
 
                 if asset_transaction.status != "COMPLETED":

@@ -6,6 +6,7 @@ from datetime import datetime
 class InvoiceCreate(BaseModel):
     customer: str
     service: str
+    asset_transaction_id: Optional[int] = None
     currency: str = "GHS"
     subtotal: float
     tax: float = 0
@@ -18,6 +19,7 @@ class InvoiceResponse(BaseModel):
     invoice_number: str
     customer: str
     service: str
+    asset_transaction_id: Optional[int] = None
     currency: str
     subtotal: float
     tax: float

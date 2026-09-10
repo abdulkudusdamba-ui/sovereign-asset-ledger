@@ -3,9 +3,8 @@ from sqlalchemy import (
     Integer,
     String,
     Float,
-    DateTime
+    DateTime,
 )
-
 from datetime import datetime
 
 from app.database.database import Base
@@ -14,7 +13,11 @@ from app.database.database import Base
 class Invoice(Base):
     __tablename__ = "invoices"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
 
     invoice_number = Column(
         String,
@@ -23,9 +26,26 @@ class Invoice(Base):
         index=True
     )
 
-    customer = Column(String, nullable=False)
+    customer = Column(
+        String,
+        nullable=False
+    )
 
-    service = Column(String, nullable=False)
+    service = Column(
+        String,
+        nullable=False
+    )
+
+    # Application-level relationship to an asset transaction.
+    #
+    # The SQLite prototype already contains this column.
+    # We intentionally do not add a physical SQLite FK here because
+    # the current database was recovered after a failed SQLite rebuild.
+    asset_transaction_id = Column(
+        Integer,
+        nullable=True,
+        index=True
+    )
 
     currency = Column(
         String,
@@ -57,9 +77,13 @@ class Invoice(Base):
         default="DRAFT"
     )
 
-    due_date = Column(DateTime)
+    due_date = Column(
+        DateTime
+    )
 
-    paid_at = Column(DateTime)
+    paid_at = Column(
+        DateTime
+    )
 
     created_at = Column(
         DateTime,
