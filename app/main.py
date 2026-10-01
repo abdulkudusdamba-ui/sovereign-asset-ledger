@@ -13,6 +13,7 @@ from app.models.payment_audit import PaymentAudit
 from app.models.pricing import Pricing
 from app.models.country import Country
 from app.models.asset_registry import AssetRegistry
+from app.models.asset_passport import AssetPassport
 from app.models.government_verification import GovernmentVerification
 from app.models.farm import Farm
 from app.models.crypto_wallet import CryptoWallet
@@ -41,6 +42,7 @@ from app.routers import certificate
 from app.routers import verification
 from app.routers.dashboard import router as dashboard_router
 from app.routers import asset_registry
+from app.routers import asset_passport
 from app.routers import farm
 from app.routers import crypto_wallet
 from app.routers import intellectual_property
@@ -98,6 +100,7 @@ app.include_router(intellectual_property.router)
 app.include_router(crypto_wallet.router)
 app.include_router(farm.router)
 app.include_router(asset_registry.router)
+app.include_router(asset_passport.router)
 
 
 @app.get("/")
