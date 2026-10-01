@@ -7,20 +7,37 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.models.asset_passport import AssetPassport
 from app.models.asset_registry import AssetRegistry
-from app.schemas.asset_passport import (
-    AssetPassportCreate,
-    AssetPassportResponse,
-)
+from app.schemas.asset_passport import AssetPassportCreate, AssetPassportResponse
 
 
 router = APIRouter(
     prefix="/passport",
-    tags=["Asset Passport"]
+    tags=["Asset Passport"],
 )
 
 
 def generate_passport_id() -> str:
     return f"SAL-PASSPORT-{uuid.uuid4().hex[:12].upper()}"
+
+
+def build_passport_response(
+    passport: AssetPassport,
+    asset: AssetRegistry,
+) -> dict:
+    return {
+        "id": passport.id,
+        "passport_id": passport.passport_id,
+        "asset_registry_id": passport.asset_registry_id,
+        "sal_id": asset.sal_id,
+        "asset_type": asset.asset_type,
+        "owner": asset.owner,
+        "estimated_value": asset.estimated_value,
+        "asset_status": asset.status,
+        "status": passport.status,
+        "lifecycle_state": passport.lifecycle_state,
+        "created_at": passport.created_at,
+        "updated_at": passport.updated_at,
+    }
 
 
 @router.post(
@@ -42,7 +59,7 @@ def create_passport(
     if not asset:
         raise HTTPException(
             status_code=404,
-            detail="SAL asset identity not found"
+            detail="SAL asset identity not found",
         )
 
     existing = (
@@ -54,7 +71,7 @@ def create_passport(
     if existing:
         raise HTTPException(
             status_code=409,
-            detail="Asset Passport already exists for this SAL asset"
+            detail="Asset Passport already exists for this SAL asset",
         )
 
     record = AssetPassport(
@@ -68,16 +85,14 @@ def create_passport(
         db.add(record)
         db.commit()
         db.refresh(record)
-
     except IntegrityError:
         db.rollback()
-
         raise HTTPException(
             status_code=409,
-            detail="Asset Passport could not be created because the asset already has a Passport"
+            detail="Asset Passport could not be created because the asset already has a Passport",
         )
 
-    return record
+    return build_passport_response(record, asset)
 
 
 @router.get(
@@ -97,7 +112,7 @@ def get_passport(
     if not asset:
         raise HTTPException(
             status_code=404,
-            detail="SAL asset identity not found"
+            detail="SAL asset identity not found",
         )
 
     passport = (
@@ -109,7 +124,7 @@ def get_passport(
     if not passport:
         raise HTTPException(
             status_code=404,
-            detail="Asset Passport not found for this SAL asset"
+            detail="Asset Passport not found for this SAL asset",
         )
 
-    return passport
+    return build_passport_response(passport, asset)

@@ -11,8 +11,16 @@ class AssetPassportResponse(BaseModel):
     id: int
     passport_id: str
     asset_registry_id: int
+
+    sal_id: str
+    asset_type: str
+    owner: str
+    estimated_value: float | None
+    asset_status: str
+
     status: str
     lifecycle_state: str
+
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
