@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
@@ -7,8 +8,12 @@ from app.models.user import User
 from app.schemas.vehicle import VehicleCreate, VehicleResponse
 from app.core.auth import get_current_user
 
-from app.services.asset_service import register_asset
+from app.services.asset_service import (
+    create_asset_registry_record,
+    generate_asset_artifacts,
+)
 from app.enums.asset_types import AssetType
+
 
 router = APIRouter(
     prefix="/vehicles",
@@ -22,6 +27,13 @@ def create_vehicle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Create a Vehicle and its SAL Master Registry identity
+    in one database transaction.
+
+    If either creation fails, neither record is committed.
+    """
+
     new_vehicle = Vehicle(
         owner=vehicle.owner,
         registration_number=vehicle.registration_number,
@@ -31,29 +43,70 @@ def create_vehicle(
         year=vehicle.year,
         engine_number=vehicle.engine_number,
         color=vehicle.color,
-        estimated_value=vehicle.estimated_value
+        estimated_value=vehicle.estimated_value,
     )
 
-    db.add(new_vehicle)
-    db.commit()
-    db.refresh(new_vehicle)
+    try:
+        # Add Vehicle to the current transaction.
+        db.add(new_vehicle)
 
-    register_asset(
-    db=db,
-    asset_type=AssetType.VEHICLE,
-    registry_id=new_vehicle.id,
-    owner=new_vehicle.owner,
-    estimated_value=new_vehicle.estimated_value,
-    asset_details={
-    "registration_number": new_vehicle.registration_number,
-    "vin": new_vehicle.vin,
-    "manufacturer": new_vehicle.manufacturer,
-    "model": new_vehicle.model,
-    "year": new_vehicle.year,
-    "engine_number": new_vehicle.engine_number,
-    "color": new_vehicle.color,
-},
-)
+        # Flush assigns new_vehicle.id without committing.
+        db.flush()
+
+        # Create the SAL identity using the Vehicle's database ID.
+        registry = create_asset_registry_record(
+            db=db,
+            asset_type=AssetType.VEHICLE,
+            registry_id=new_vehicle.id,
+            owner=new_vehicle.owner,
+            estimated_value=new_vehicle.estimated_value,
+        )
+
+        # ONE COMMIT:
+        # Vehicle + SAL Master Registry are committed together.
+        db.commit()
+
+        db.refresh(new_vehicle)
+        db.refresh(registry)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Vehicle could not be registered because a unique "
+                "vehicle value already exists."
+            )
+        )
+
+    except Exception:
+        db.rollback()
+        raise
+
+    # Generate QR/certificate only after the database transaction
+    # has successfully committed.
+    try:
+        generate_asset_artifacts(
+            registry=registry,
+            asset_details={
+                "registration_number": new_vehicle.registration_number,
+                "vin": new_vehicle.vin,
+                "manufacturer": new_vehicle.manufacturer,
+                "model": new_vehicle.model,
+                "year": new_vehicle.year,
+                "engine_number": new_vehicle.engine_number,
+                "color": new_vehicle.color,
+                "estimated_value": new_vehicle.estimated_value,
+            },
+        )
+    except Exception as artifact_error:
+        # The asset itself is already safely registered.
+        # Artifact failure must not roll back the database record.
+        print(
+            "WARNING: Vehicle registered successfully, "
+            f"but SAL artifact generation failed: {artifact_error}"
+        )
 
     return new_vehicle
 
@@ -72,10 +125,17 @@ def get_vehicle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
 
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
 
     return vehicle
 
@@ -87,10 +147,17 @@ def update_vehicle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
 
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
 
     vehicle.owner = updated.owner
     vehicle.registration_number = updated.registration_number
@@ -114,10 +181,17 @@ def delete_vehicle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id)
+        .first()
+    )
 
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Vehicle not found"
+        )
 
     db.delete(vehicle)
     db.commit()
