@@ -164,11 +164,14 @@ def transition_passport_lifecycle(
             f"{current_state.value} -> {requested_state.value}"
         )
 
-    # Capture the exact version that was read.
+    # Use the caller-provided expected version directly.
     #
-    # The final UPDATE below will only succeed if this version
-    # is still current in the database.
-    expected_version = passport.version
+    # The final UPDATE below will only succeed if the exact
+    # version supplied by the caller is still current.
+    if expected_version is None:
+        raise PassportConcurrencyError(
+            f"Passport {passport.id} requires an expected version"
+        )
 
     updated_rows = (
         db.query(AssetPassport)
