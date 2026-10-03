@@ -21,6 +21,10 @@ class AssetPassportResponse(BaseModel):
     status: str
     lifecycle_state: str
 
+    # Optimistic concurrency version.
+    # Clients use this value to prevent stale lifecycle updates.
+    version: int
+
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
