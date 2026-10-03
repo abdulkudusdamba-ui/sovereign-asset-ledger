@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,35 @@ class PassportLifecycleUpdate(BaseModel):
     reference: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("lifecycle_state")
+    @classmethod
+    def validate_lifecycle_state(cls, value: str) -> str:
+        allowed_states = {
+            "REGISTERED",
+            "ACTIVE",
+            "TRANSFER_PENDING",
+            "TRANSFERRED",
+            "SUSPENDED",
+            "RETIRED",
+        }
+
+        if value not in allowed_states:
+            raise ValueError(
+                f"Invalid Passport lifecycle state: {value}"
+            )
+
+        return value
+
+    @field_validator("expected_version")
+    @classmethod
+    def validate_expected_version(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(
+                "expected_version must be greater than or equal to 1"
+            )
+
+        return value
 
 
 class PassportLifecycleHistoryResponse(BaseModel):
