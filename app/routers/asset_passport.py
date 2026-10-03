@@ -30,7 +30,6 @@ class PassportLifecycleUpdate(BaseModel):
     expected_version: int
     reason: str | None = None
     reference: str | None = None
-    changed_by: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -217,7 +216,7 @@ def update_passport_lifecycle(
             expected_version=payload.expected_version,
             reason=payload.reason,
             reference=payload.reference,
-            changed_by=payload.changed_by,
+            changed_by=current_user.email,
         )
 
         db.commit()
