@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 
@@ -22,5 +22,6 @@ class GovernmentVerificationResponse(BaseModel):
         from_attributes = True
 class GovernmentVerificationDecision(BaseModel):
     status: str
-    verified_by: str
     notes: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")

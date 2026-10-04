@@ -24,7 +24,8 @@ router = APIRouter(
 )
 def request_government_verification(
     request: GovernmentVerificationCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role(["admin", "registrar", "viewer"]))
 ):
     asset = (
         db.query(AssetRegistry)
@@ -100,7 +101,7 @@ def decide_government_verification(
         )
 
     verification.status = decision.status
-    verification.verified_by = decision.verified_by
+    verification.verified_by = current_user.email
 
     if decision.notes:
         verification.notes = decision.notes
