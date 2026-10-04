@@ -12,12 +12,16 @@ from app.services.pdf_service_v3 import generate_certificate
 
 def generate_sal_id() -> str:
     """
-    Generate a unique SAL asset identity.
+    Generate a new SAL asset identity.
 
-    SAL IDs are generated server-side and are never accepted
-    from API clients.
+    Identity rules:
+    - Generated only by the SAL server.
+    - Existing SAL IDs are never regenerated.
+    - New IDs use 96 bits of UUID randomness.
+    - The database unique constraint remains the final
+      protection against duplicate identities.
     """
-    return f"SAL-{uuid.uuid4().hex[:12].upper()}"
+    return f"SAL-{uuid.uuid4().hex[:24].upper()}"
 
 
 def create_asset_registry_record(
