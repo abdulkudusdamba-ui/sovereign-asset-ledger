@@ -12,6 +12,9 @@ from app.schemas.asset_evidence import (
     AssetEvidenceCreate,
     AssetEvidenceResponse,
 )
+from app.schemas.asset_evidence_integrity import (
+    AssetEvidenceIntegrityResponse,
+)
 from app.schemas.asset_evidence_review import (
     AssetEvidenceReviewHistoryResponse,
     AssetEvidenceReviewRequest,
@@ -22,6 +25,7 @@ from app.services.evidence_storage_service import (
     EvidenceFingerprintMismatchError,
     EvidenceStorageError,
 )
+from app.services.audit_service import record_audit_event
 from app.services.asset_evidence_review_service import (
     AssetEvidenceConcurrencyError,
     AssetEvidenceNotFoundError,
@@ -247,6 +251,86 @@ def list_evidence(
         .offset(offset)
         .limit(limit)
         .all()
+    )
+
+
+@router.post(
+    "/item/{evidence_id}/verify-integrity",
+    response_model=AssetEvidenceIntegrityResponse,
+)
+def verify_evidence_integrity(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    evidence = (
+        db.query(AssetEvidence)
+        .filter(AssetEvidence.evidence_id == evidence_id)
+        .first()
+    )
+
+    if not evidence:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence not found",
+        )
+
+    if not evidence.fingerprint_sha256:
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence does not have a recorded SHA-256 fingerprint",
+        )
+
+    if evidence.storage_backend != "local":
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence storage backend is not supported for integrity verification",
+        )
+
+    storage = get_evidence_storage()
+
+    try:
+        stored_fingerprint, is_valid = storage.verify_integrity(
+            evidence_id=evidence.evidence_id,
+            expected_fingerprint_sha256=evidence.fingerprint_sha256,
+        )
+    except EvidenceStorageError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    result = (
+        "INTEGRITY_VALID"
+        if is_valid
+        else "INTEGRITY_FAILED"
+    )
+
+    record_audit_event(
+        db,
+        actor_id=current_user.id,
+        actor_type="USER",
+        action="VERIFY_INTEGRITY",
+        entity_type="ASSET_EVIDENCE",
+        entity_id=evidence.evidence_id,
+        passport_id=evidence.passport_id,
+        source="API",
+        reason="Evidence file integrity verification",
+        result=result,
+        metadata={
+            "recorded_fingerprint_sha256": evidence.fingerprint_sha256,
+            "stored_fingerprint_sha256": stored_fingerprint,
+            "integrity_result": result,
+        },
+    )
+
+    db.commit()
+
+    return AssetEvidenceIntegrityResponse(
+        evidence_id=evidence.evidence_id,
+        recorded_fingerprint_sha256=evidence.fingerprint_sha256,
+        stored_fingerprint_sha256=stored_fingerprint,
+        result=result,
     )
 
 

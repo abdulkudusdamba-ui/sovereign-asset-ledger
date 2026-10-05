@@ -130,6 +130,52 @@ class LocalEvidenceStorage:
         self._validate_evidence_id(evidence_id)
         return (self.root / f"{evidence_id}.bin").is_file()
 
+    def read(self, evidence_id: str) -> bytes:
+        """
+        Read an immutable evidence object from local storage.
+
+        This method performs identifier validation before constructing
+        the storage path and raises EvidenceStorageError when the
+        evidence object does not exist or cannot be read.
+        """
+        self._validate_evidence_id(evidence_id)
+
+        path = self.root / f"{evidence_id}.bin"
+
+        if not path.is_file():
+            raise EvidenceStorageError(
+                "Evidence file not found"
+            )
+
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise EvidenceStorageError(
+                "Evidence file could not be read"
+            ) from exc
+
+    def verify_integrity(
+        self,
+        evidence_id: str,
+        expected_fingerprint_sha256: str,
+    ) -> tuple[str, bool]:
+        """
+        Recalculate the stored evidence SHA-256 fingerprint and compare
+        it with the fingerprint recorded by SAL.
+        """
+        if not expected_fingerprint_sha256:
+            raise EvidenceStorageError(
+                "Evidence does not have a recorded SHA-256 fingerprint"
+            )
+
+        content = self.read(evidence_id)
+        calculated_fingerprint = self.calculate_sha256(content)
+
+        return (
+            calculated_fingerprint,
+            calculated_fingerprint == expected_fingerprint_sha256.strip().lower(),
+        )
+
     def delete(self, evidence_id: str) -> None:
         """
         Delete a stored evidence object.
