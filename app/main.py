@@ -47,6 +47,7 @@ from app.routers.dashboard import router as dashboard_router
 from app.routers import asset_registry
 from app.routers import asset_passport
 from app.routers import asset_evidence
+from app.routers import audit_event
 from app.routers import farm
 from app.routers import crypto_wallet
 from app.routers import intellectual_property
@@ -106,6 +107,7 @@ app.include_router(farm.router)
 app.include_router(asset_registry.router)
 app.include_router(asset_passport.router)
 app.include_router(asset_evidence.router)
+app.include_router(audit_event.router)
 
 
 @app.get("/")
