@@ -34,6 +34,8 @@ class PassportLifecycleHistory(Base):
     reference = Column(
         String,
         nullable=True,
+        unique=True,
+        index=True,
     )
 
     changed_by = Column(
