@@ -97,11 +97,6 @@ def build_passport_response(
     )
 
 
-@router.post(
-    "/{sal_id}",
-    response_model=AssetPassportResponse,
-    status_code=201,
-)
 @router.get(
     "/lifecycle-states",
 )
@@ -110,9 +105,13 @@ def get_passport_lifecycle_states():
     return get_passport_lifecycle_semantics()
 
 
+@router.post(
+    "/{sal_id}",
+    response_model=AssetPassportResponse,
+    status_code=201,
+)
 def create_passport(
     sal_id: str,
-    payload: AssetPassportCreate,
     db: Session = Depends(get_db),
     current_user=Depends(require_role(["admin", "registrar"])),
 ):
