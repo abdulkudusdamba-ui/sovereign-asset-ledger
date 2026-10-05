@@ -33,6 +33,35 @@ def test_db(tmp_path):
 
     Base.metadata.create_all(bind=engine)
 
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER IF NOT EXISTS
+            trg_audit_events_prevent_update
+            BEFORE UPDATE ON audit_events
+            BEGIN
+                SELECT RAISE(
+                    ABORT,
+                    'Audit events are immutable and cannot be updated'
+                );
+            END;
+            """
+        )
+
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER IF NOT EXISTS
+            trg_audit_events_prevent_delete
+            BEFORE DELETE ON audit_events
+            BEGIN
+                SELECT RAISE(
+                    ABORT,
+                    'Audit events are immutable and cannot be deleted'
+                );
+            END;
+            """
+        )
+
     db = TestingSessionLocal()
 
     try:

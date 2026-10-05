@@ -288,3 +288,43 @@ def test_audit_events_endpoint_is_read_only(client, test_db):
     assert post_response.status_code == 405
     assert patch_response.status_code == 405
     assert delete_response.status_code == 405
+
+
+def test_database_rejects_audit_event_update(test_db):
+    from sqlalchemy.exc import IntegrityError
+
+    event = create_audit_event(
+        test_db,
+        event_id="SAL-EVENT-IMMUTABLE-UPDATE",
+    )
+
+    event.result = "TAMPERED"
+
+    try:
+        test_db.commit()
+    except Exception as exc:
+        test_db.rollback()
+        assert "immutable" in str(exc).lower()
+    else:
+        raise AssertionError(
+            "Database allowed an immutable audit event UPDATE"
+        )
+
+
+def test_database_rejects_audit_event_delete(test_db):
+    event = create_audit_event(
+        test_db,
+        event_id="SAL-EVENT-IMMUTABLE-DELETE",
+    )
+
+    test_db.delete(event)
+
+    try:
+        test_db.commit()
+    except Exception as exc:
+        test_db.rollback()
+        assert "immutable" in str(exc).lower()
+    else:
+        raise AssertionError(
+            "Database allowed an immutable audit event DELETE"
+        )
