@@ -903,3 +903,123 @@ def test_evidence_review_audit_event_records_authenticated_actor(
     assert audit_event.actor_id == user.id
     assert audit_event.actor_type == "USER"
     assert audit_event.source == "API"
+
+
+
+def test_evidence_accepts_and_returns_valid_sha256_fingerprint(
+    client,
+    test_db,
+):
+    headers = create_user_and_login(
+        client,
+        test_db,
+        "admin",
+        "fingerprint-valid@sal.test",
+    )
+
+    passport = create_registry_and_passport(client, headers)
+    fingerprint = "a" * 64
+
+    response = client.post(
+        f"/evidence/{passport['id']}",
+        headers=headers,
+        json={
+            "evidence_type": "DOCUMENT",
+            "title": "SHA-256 Evidence",
+            "fingerprint_sha256": fingerprint,
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["fingerprint_sha256"] == fingerprint
+
+
+def test_evidence_normalizes_sha256_fingerprint_to_lowercase(
+    client,
+    test_db,
+):
+    headers = create_user_and_login(
+        client,
+        test_db,
+        "admin",
+        "fingerprint-normalize@sal.test",
+    )
+
+    passport = create_registry_and_passport(client, headers)
+    fingerprint = "ABCDEF" * 10 + "ABCD"
+
+    assert len(fingerprint) == 64
+
+    response = client.post(
+        f"/evidence/{passport['id']}",
+        headers=headers,
+        json={
+            "evidence_type": "DOCUMENT",
+            "title": "Normalized SHA-256 Evidence",
+            "fingerprint_sha256": fingerprint,
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["fingerprint_sha256"] == fingerprint.lower()
+
+
+def test_invalid_sha256_fingerprint_is_rejected(
+    client,
+    test_db,
+):
+    headers = create_user_and_login(
+        client,
+        test_db,
+        "admin",
+        "fingerprint-invalid@sal.test",
+    )
+
+    passport = create_registry_and_passport(client, headers)
+
+    response = client.post(
+        f"/evidence/{passport['id']}",
+        headers=headers,
+        json={
+            "evidence_type": "DOCUMENT",
+            "title": "Invalid Fingerprint Evidence",
+            "fingerprint_sha256": "not-a-valid-sha256",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_evidence_fingerprint_is_optional_for_metadata_only_evidence(
+    client,
+    test_db,
+):
+    headers = create_user_and_login(
+        client,
+        test_db,
+        "admin",
+        "fingerprint-optional@sal.test",
+    )
+
+    passport = create_registry_and_passport(client, headers)
+
+    response = client.post(
+        f"/evidence/{passport['id']}",
+        headers=headers,
+        json={
+            "evidence_type": "NOTE",
+            "title": "Metadata Only Evidence",
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["fingerprint_sha256"] is None

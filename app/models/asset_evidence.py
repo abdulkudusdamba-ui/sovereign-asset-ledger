@@ -60,6 +60,12 @@ class AssetEvidence(Base):
         index=True,
     )
 
+    fingerprint_sha256 = Column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+
     status = Column(
         String,
         nullable=False,

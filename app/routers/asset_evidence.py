@@ -62,6 +62,7 @@ def create_evidence(
         description=payload.description,
         source=payload.source,
         reference=payload.reference,
+        fingerprint_sha256=payload.fingerprint_sha256,
         status="SUBMITTED",
         submitted_by=current_user.email,
         version=1,
