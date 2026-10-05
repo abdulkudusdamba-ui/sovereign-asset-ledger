@@ -245,6 +245,9 @@ def update_passport_lifecycle(
             reason=payload.reason,
             reference=payload.reference,
             changed_by=current_user.email,
+            actor_id=current_user.id,
+            actor_type="USER",
+            source="API",
         )
 
         db.commit()

@@ -222,3 +222,92 @@ def test_unauthenticated_lifecycle_update_is_rejected(client, test_db):
     )
 
     assert response.status_code == 401
+
+
+def test_passport_lifecycle_creates_audit_event(client, test_db):
+    headers = create_admin_and_login(client, test_db)
+    passport = create_registry_and_passport(client, headers)
+
+    response = client.patch(
+        f"/passport/{passport['id']}/lifecycle",
+        json={
+            "lifecycle_state": "ACTIVE",
+            "expected_version": 1,
+            "reason": "Start Passport audit integration test",
+            "reference": "LIFECYCLE-AUDIT-EVENT-001",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    from app.models.audit_event import AuditEvent
+
+    audit_event = (
+        test_db.query(AuditEvent)
+        .filter(
+            AuditEvent.entity_type == "ASSET_PASSPORT",
+            AuditEvent.entity_id == passport["passport_id"],
+            AuditEvent.reference == "LIFECYCLE-AUDIT-EVENT-001",
+        )
+        .first()
+    )
+
+    assert audit_event is not None
+    assert audit_event.action == "PASSPORT_LIFECYCLE"
+    assert audit_event.actor_type == "USER"
+    assert audit_event.source == "API"
+    assert audit_event.result == "SUCCESS"
+    assert audit_event.asset_registry_id == passport["asset_registry_id"]
+    assert audit_event.passport_id == passport["id"]
+    assert audit_event.before_data is not None
+    assert audit_event.after_data is not None
+    assert audit_event.audit_metadata is not None
+
+
+def test_passport_lifecycle_audit_event_records_authenticated_actor(
+    client,
+    test_db,
+):
+    headers = create_admin_and_login(client, test_db)
+    passport = create_registry_and_passport(client, headers)
+
+    from app.models.user import User
+
+    user = (
+        test_db.query(User)
+        .filter(User.email == "lifecycle-admin@sal.test")
+        .first()
+    )
+
+    assert user is not None
+
+    response = client.patch(
+        f"/passport/{passport['id']}/lifecycle",
+        json={
+            "lifecycle_state": "ACTIVE",
+            "expected_version": 1,
+            "reason": "Verify Passport lifecycle audit actor",
+            "reference": "LIFECYCLE-AUDIT-ACTOR-001",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    from app.models.audit_event import AuditEvent
+
+    audit_event = (
+        test_db.query(AuditEvent)
+        .filter(
+            AuditEvent.entity_type == "ASSET_PASSPORT",
+            AuditEvent.entity_id == passport["passport_id"],
+            AuditEvent.reference == "LIFECYCLE-AUDIT-ACTOR-001",
+        )
+        .first()
+    )
+
+    assert audit_event is not None
+    assert audit_event.actor_id == user.id
+    assert audit_event.actor_type == "USER"
+    assert audit_event.source == "API"

@@ -3,7 +3,9 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from app.models.asset_passport import AssetPassport
+from app.models.asset_registry import AssetRegistry
 from app.models.passport_lifecycle_history import PassportLifecycleHistory
+from app.services.audit_service import record_audit_event
 
 
 class PassportLifecycleState(str, Enum):
@@ -111,6 +113,9 @@ def transition_passport_lifecycle(
     reason: str | None = None,
     reference: str | None = None,
     changed_by: str | None = None,
+    actor_id: int | None = None,
+    actor_type: str = "USER",
+    source: str = "API",
 ) -> AssetPassport:
     passport = (
         db.query(AssetPassport)
@@ -205,6 +210,48 @@ def transition_passport_lifecycle(
     )
 
     db.add(history)
+
+    asset_registry = (
+        db.query(AssetRegistry)
+        .filter(AssetRegistry.id == passport.asset_registry_id)
+        .first()
+    )
+
+    if not asset_registry:
+        raise PassportLifecycleTransitionError(
+            f"Passport {passport.id} exists, but linked SAL asset "
+            "identity was not found"
+        )
+
+    record_audit_event(
+        db,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        action="PASSPORT_LIFECYCLE",
+        entity_type="ASSET_PASSPORT",
+        entity_id=passport.passport_id,
+        asset_registry_id=asset_registry.id,
+        passport_id=passport.id,
+        source=source,
+        reason=reason,
+        reference=reference,
+        result="SUCCESS",
+        before_data={
+            "lifecycle_state": current_state.value,
+            "version": expected_version,
+        },
+        after_data={
+            "lifecycle_state": requested_state.value,
+            "version": expected_version + 1,
+        },
+        metadata={
+            "changed_by": changed_by,
+            "passport_id": passport.passport_id,
+            "sal_id": asset_registry.sal_id,
+            "asset_type": asset_registry.asset_type,
+        },
+    )
+
     db.flush()
 
     # Refresh the in-memory Passport so the caller receives
