@@ -1,6 +1,7 @@
 import secrets
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -331,6 +332,78 @@ def verify_evidence_integrity(
         recorded_fingerprint_sha256=evidence.fingerprint_sha256,
         stored_fingerprint_sha256=stored_fingerprint,
         result=result,
+    )
+
+
+@router.get(
+    "/item/{evidence_id}/download",
+)
+def download_evidence(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    evidence = (
+        db.query(AssetEvidence)
+        .filter(AssetEvidence.evidence_id == evidence_id)
+        .first()
+    )
+
+    if not evidence:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence not found",
+        )
+
+    if evidence.storage_backend != "local":
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence storage backend is not supported for download",
+        )
+
+    if not evidence.storage_key:
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence does not have a stored file",
+        )
+
+    storage = get_evidence_storage()
+
+    expected_storage_key = f"{evidence.evidence_id}.bin"
+    if evidence.storage_key != expected_storage_key:
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence storage metadata is invalid",
+        )
+
+    try:
+        storage_path = storage.root / expected_storage_key
+        storage_path = storage_path.resolve()
+
+        if storage_path.parent != storage.root:
+            raise HTTPException(
+                status_code=409,
+                detail="Evidence storage metadata is invalid",
+            )
+
+        if not storage_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="Evidence file not found",
+            )
+
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence file could not be accessed",
+        ) from exc
+
+    return FileResponse(
+        path=str(storage_path),
+        media_type=evidence.content_type or "application/octet-stream",
+        filename=evidence.original_filename or expected_storage_key,
     )
 
 
