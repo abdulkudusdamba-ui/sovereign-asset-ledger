@@ -11,3 +11,11 @@ venv/
 
 # Environment variables
 .env
+
+# SAL database backups and recovery artifacts
+sal.db.*
+*backup*
+*failed-migration*
+*failed-fk-migration*
+*clean-recovery*
+*damaged-before-recovery*

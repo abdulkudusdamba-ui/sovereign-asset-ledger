@@ -26,6 +26,8 @@ from app.models.bank_account import BankAccount
 from app.models.diamond import Diamond
 from app.models.gold import Gold
 from app.models.vehicle import Vehicle
+from app.models.asset_evidence import AssetEvidence
+from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
 
 # Routers
 from app.routers import asset_transaction
@@ -43,6 +45,7 @@ from app.routers import verification
 from app.routers.dashboard import router as dashboard_router
 from app.routers import asset_registry
 from app.routers import asset_passport
+from app.routers import asset_evidence
 from app.routers import farm
 from app.routers import crypto_wallet
 from app.routers import intellectual_property
@@ -101,6 +104,7 @@ app.include_router(crypto_wallet.router)
 app.include_router(farm.router)
 app.include_router(asset_registry.router)
 app.include_router(asset_passport.router)
+app.include_router(asset_evidence.router)
 
 
 @app.get("/")
