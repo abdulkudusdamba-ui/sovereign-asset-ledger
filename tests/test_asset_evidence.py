@@ -801,3 +801,105 @@ def test_rejected_evidence_is_immutable(
 
     assert current["status"] == "REJECTED"
     assert current["version"] == 3
+
+def test_evidence_review_creates_audit_event(
+    client,
+    test_db,
+):
+    headers, passport, evidence = create_test_evidence(
+        client,
+        test_db,
+        "admin",
+        "review-audit-event@sal.test",
+    )
+
+    response = client.patch(
+        f"/evidence/item/{evidence['evidence_id']}/review",
+        json={
+            "status": "UNDER_REVIEW",
+            "expected_version": 1,
+            "reason": "Start evidence audit integration test",
+            "reference": "REVIEW-AUDIT-EVENT-001",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    from app.models.audit_event import AuditEvent
+
+    audit_event = (
+        test_db.query(AuditEvent)
+        .filter(
+            AuditEvent.entity_type == "ASSET_EVIDENCE",
+            AuditEvent.entity_id == evidence["evidence_id"],
+            AuditEvent.reference == "REVIEW-AUDIT-EVENT-001",
+        )
+        .first()
+    )
+
+    assert audit_event is not None
+
+    assert audit_event.action == "EVIDENCE_REVIEW"
+    assert audit_event.actor_type == "USER"
+    assert audit_event.source == "API"
+    assert audit_event.result == "SUCCESS"
+
+    assert audit_event.asset_registry_id is not None
+    assert audit_event.passport_id == passport["id"]
+
+    assert audit_event.before_data is not None
+    assert audit_event.after_data is not None
+    assert audit_event.audit_metadata is not None
+
+
+def test_evidence_review_audit_event_records_authenticated_actor(
+    client,
+    test_db,
+):
+    headers, passport, evidence = create_test_evidence(
+        client,
+        test_db,
+        "registrar",
+        "review-audit-actor@sal.test",
+    )
+
+    from app.models.user import User
+
+    user = (
+        test_db.query(User)
+        .filter(User.email == "review-audit-actor@sal.test")
+        .first()
+    )
+
+    assert user is not None
+
+    response = client.patch(
+        f"/evidence/item/{evidence['evidence_id']}/review",
+        json={
+            "status": "UNDER_REVIEW",
+            "expected_version": 1,
+            "reason": "Verify authenticated audit actor",
+            "reference": "REVIEW-AUDIT-ACTOR-001",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+    from app.models.audit_event import AuditEvent
+
+    audit_event = (
+        test_db.query(AuditEvent)
+        .filter(
+            AuditEvent.entity_type == "ASSET_EVIDENCE",
+            AuditEvent.entity_id == evidence["evidence_id"],
+            AuditEvent.reference == "REVIEW-AUDIT-ACTOR-001",
+        )
+        .first()
+    )
+
+    assert audit_event is not None
+    assert audit_event.actor_id == user.id
+    assert audit_event.actor_type == "USER"
+    assert audit_event.source == "API"

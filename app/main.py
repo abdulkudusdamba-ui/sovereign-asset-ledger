@@ -28,6 +28,7 @@ from app.models.gold import Gold
 from app.models.vehicle import Vehicle
 from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
+from app.models.audit_event import AuditEvent
 
 # Routers
 from app.routers import asset_transaction

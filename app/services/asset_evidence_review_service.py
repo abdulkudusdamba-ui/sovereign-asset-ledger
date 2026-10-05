@@ -6,6 +6,9 @@ from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import (
     AssetEvidenceReviewHistory,
 )
+from app.models.asset_passport import AssetPassport
+from app.models.asset_registry import AssetRegistry
+from app.services.audit_service import record_audit_event
 
 
 class AssetEvidenceStatus(str, Enum):
@@ -58,6 +61,9 @@ def transition_asset_evidence(
     reason: str | None = None,
     reference: str | None = None,
     reviewed_by: str | None = None,
+    actor_id: int | None = None,
+    actor_type: str = "USER",
+    source: str = "API",
 ) -> AssetEvidence:
     evidence = (
         db.query(AssetEvidence)
@@ -148,6 +154,60 @@ def transition_asset_evidence(
     )
 
     db.add(history)
+
+    passport = (
+        db.query(AssetPassport)
+        .filter(AssetPassport.id == evidence.passport_id)
+        .first()
+    )
+
+    if not passport:
+        raise AssetEvidenceReviewTransitionError(
+            f"Asset Passport for Evidence {evidence.evidence_id} was not found"
+        )
+
+    asset_registry = (
+        db.query(AssetRegistry)
+        .filter(
+            AssetRegistry.id == passport.asset_registry_id
+        )
+        .first()
+    )
+
+    if not asset_registry:
+        raise AssetEvidenceReviewTransitionError(
+            f"Asset Registry record for Evidence {evidence.evidence_id} "
+            "was not found"
+        )
+
+    record_audit_event(
+        db,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        action="EVIDENCE_REVIEW",
+        entity_type="ASSET_EVIDENCE",
+        entity_id=evidence.evidence_id,
+        asset_registry_id=asset_registry.id,
+        passport_id=passport.id,
+        source=source,
+        reason=reason,
+        reference=reference,
+        result="SUCCESS",
+        before_data={
+            "status": current_status.value,
+            "version": expected_version,
+        },
+        after_data={
+            "status": requested_status.value,
+            "version": expected_version + 1,
+        },
+        metadata={
+            "reviewed_by": reviewed_by,
+            "evidence_type": evidence.evidence_type,
+            "passport_id": passport.passport_id,
+        },
+    )
+
     db.flush()
 
     db.refresh(evidence)
