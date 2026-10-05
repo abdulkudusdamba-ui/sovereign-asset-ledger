@@ -19,3 +19,6 @@ sal.db.*
 *failed-fk-migration*
 *clean-recovery*
 *damaged-before-recovery*
+
+# SAL evidence files (never commit uploaded evidence)
+storage/evidence/

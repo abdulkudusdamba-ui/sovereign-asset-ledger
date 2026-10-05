@@ -1,6 +1,6 @@
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,11 @@ from app.schemas.asset_evidence_review import (
     AssetEvidenceReviewHistoryResponse,
     AssetEvidenceReviewRequest,
     AssetEvidenceReviewResponse,
+)
+from app.services.evidence_storage import get_evidence_storage
+from app.services.evidence_storage_service import (
+    EvidenceFingerprintMismatchError,
+    EvidenceStorageError,
 )
 from app.services.asset_evidence_review_service import (
     AssetEvidenceConcurrencyError,
@@ -78,6 +83,132 @@ def create_evidence(
         raise HTTPException(
             status_code=409,
             detail="Evidence could not be created because of a database integrity constraint",
+        ) from exc
+
+    return evidence
+
+
+@router.post(
+    "/{passport_id}/upload",
+    response_model=AssetEvidenceResponse,
+    status_code=201,
+)
+async def upload_evidence(
+    passport_id: int,
+    evidence_type: str = Form(...),
+    title: str = Form(...),
+    description: str | None = Form(None),
+    source: str | None = Form(None),
+    reference: str | None = Form(None),
+    fingerprint_sha256: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role(["admin", "registrar"])),
+):
+    """
+    Upload an Evidence file and persist its immutable metadata.
+
+    The server calculates the SHA-256 fingerprint from the actual
+    uploaded bytes. If a fingerprint is supplied by the caller, it
+    must match the calculated fingerprint.
+
+    File storage and database persistence are coordinated with
+    compensating cleanup: if database persistence fails after the
+    file is stored, the newly stored file is deleted.
+    """
+
+    MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+
+    passport = (
+        db.query(AssetPassport)
+        .filter(AssetPassport.id == passport_id)
+        .first()
+    )
+
+    if not passport:
+        raise HTTPException(
+            status_code=404,
+            detail="Asset Passport not found",
+        )
+
+    evidence_type = evidence_type.strip()
+    title = title.strip()
+
+    if not evidence_type:
+        raise HTTPException(
+            status_code=422,
+            detail="evidence_type cannot be empty",
+        )
+
+    if not title:
+        raise HTTPException(
+            status_code=422,
+            detail="title cannot be empty",
+        )
+
+    content = await file.read(MAX_UPLOAD_SIZE + 1)
+
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="Evidence file exceeds the maximum allowed size of 10 MiB",
+        )
+
+    evidence_id = f"SAL-EVIDENCE-{secrets.token_hex(6).upper()}"
+    storage = get_evidence_storage()
+
+    try:
+        stored = storage.store(
+            evidence_id=evidence_id,
+            content=content,
+            expected_fingerprint_sha256=fingerprint_sha256,
+        )
+    except EvidenceFingerprintMismatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+    except EvidenceStorageError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    evidence = AssetEvidence(
+        evidence_id=evidence_id,
+        passport_id=passport.id,
+        evidence_type=evidence_type,
+        title=title,
+        description=description,
+        source=source,
+        reference=reference,
+        fingerprint_sha256=stored.fingerprint_sha256,
+        storage_backend="local",
+        storage_key=f"{evidence_id}.bin",
+        original_filename=file.filename,
+        content_type=file.content_type,
+        size_bytes=stored.size_bytes,
+        status="SUBMITTED",
+        submitted_by=current_user.email,
+        version=1,
+    )
+
+    db.add(evidence)
+
+    try:
+        db.commit()
+        db.refresh(evidence)
+    except Exception as exc:
+        db.rollback()
+
+        try:
+            storage.delete(evidence_id)
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=409,
+            detail="Evidence file was stored but database persistence failed",
         ) from exc
 
     return evidence

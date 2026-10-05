@@ -10,6 +10,10 @@ class AssetEvidence(Base):
 
     Evidence supports verification workflows but does not, by itself,
     establish legal ownership or government title.
+
+    File content is stored through the Evidence Storage Service.
+    This table stores only the metadata required to locate, identify,
+    and verify that stored content.
     """
 
     __tablename__ = "asset_evidence"
@@ -64,6 +68,33 @@ class AssetEvidence(Base):
         String(64),
         nullable=True,
         index=True,
+    )
+
+    storage_backend = Column(
+        String,
+        nullable=True,
+        index=True,
+    )
+
+    storage_key = Column(
+        String,
+        nullable=True,
+        index=True,
+    )
+
+    original_filename = Column(
+        String,
+        nullable=True,
+    )
+
+    content_type = Column(
+        String,
+        nullable=True,
+    )
+
+    size_bytes = Column(
+        Integer,
+        nullable=True,
     )
 
     status = Column(

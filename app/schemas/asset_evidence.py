@@ -56,6 +56,12 @@ class AssetEvidenceResponse(BaseModel):
     reference: str | None = None
     fingerprint_sha256: str | None = None
 
+    storage_backend: str | None = None
+    storage_key: str | None = None
+    original_filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+
     status: str
     submitted_by: str | None = None
     version: int
