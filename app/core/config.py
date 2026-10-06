@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     DATABASE_POOL_RECYCLE: int = 1800
     DATABASE_POOL_PRE_PING: bool = True
 
+    # Redis / background jobs
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
+
     # Authentication
     SECRET_KEY: str = Field(
         default="development-only-change-this-secret",
