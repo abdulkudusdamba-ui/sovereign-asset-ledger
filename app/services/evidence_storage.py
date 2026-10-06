@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from app.core.config import settings
 from app.services.evidence_storage_service import LocalEvidenceStorage
 
 
@@ -15,16 +16,21 @@ def get_evidence_storage_root() -> Path:
     """
     Return the configured local Evidence storage root.
 
-    The environment variable allows deployment-specific storage
-    configuration without changing application code.
+    Evidence storage is resolved at call time so deployment-specific
+    environment changes are respected by tests and by processes that
+    intentionally configure storage before performing an operation.
 
-    For development, the default is:
-        <project-root>/storage/evidence
+    The centralized settings layer remains the source of the default.
     """
 
     configured_root = os.getenv(
         "SAL_EVIDENCE_STORAGE_ROOT"
     )
+
+    if configured_root:
+        return Path(configured_root).expanduser().resolve()
+
+    configured_root = settings.SAL_EVIDENCE_STORAGE_ROOT
 
     if configured_root:
         return Path(configured_root).expanduser().resolve()

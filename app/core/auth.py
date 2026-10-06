@@ -1,24 +1,29 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.database.database import get_db
 from app.models.user import User
 
-SECRET_KEY = "your_secret_key_here_change_this"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/users/login"
+)
 
 
 def create_access_token(data: dict):
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + timedelta(
+    expire = datetime.now(timezone.utc) + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
@@ -27,7 +32,7 @@ def create_access_token(data: dict):
     return jwt.encode(
         to_encode,
         SECRET_KEY,
-        algorithm=ALGORITHM
+        algorithm=ALGORITHM,
     )
 
 
@@ -36,7 +41,7 @@ def verify_token(token: str):
         payload = jwt.decode(
             token,
             SECRET_KEY,
-            algorithms=[ALGORITHM]
+            algorithms=[ALGORITHM],
         )
         return payload
 
@@ -46,14 +51,14 @@ def verify_token(token: str):
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     payload = verify_token(token)
 
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Invalid or expired token",
         )
 
     email = payload.get("sub")
@@ -61,27 +66,34 @@ def get_current_user(
     if email is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            detail="Invalid token",
         )
 
-    user = db.query(User).filter(User.email == email).first()
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
 
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
+            detail="User not found",
         )
 
     return user
 
 
 def require_role(allowed_roles: list):
-    def role_checker(current_user: User = Depends(get_current_user)):
+    def role_checker(
+        current_user: User = Depends(get_current_user),
+    ):
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Access denied",
             )
+
         return current_user
 
     return role_checker
