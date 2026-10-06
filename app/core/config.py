@@ -53,13 +53,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secret_key(self):
-        if (
-            self.ENVIRONMENT.lower() == "production"
-            and self.SECRET_KEY == "development-only-change-this-secret"
-        ):
-            raise ValueError(
-                "SECRET_KEY must be explicitly configured for production"
-            )
+        if self.ENVIRONMENT.lower() == "production":
+            if self.SECRET_KEY == "development-only-change-this-secret":
+                raise ValueError(
+                    "SECRET_KEY must be explicitly configured for production"
+                )
+
+            if not self.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
+                raise ValueError(
+                    "DATABASE_URL must use PostgreSQL in production"
+                )
 
         return self
 

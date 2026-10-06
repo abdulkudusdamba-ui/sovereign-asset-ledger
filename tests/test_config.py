@@ -27,11 +27,24 @@ def test_production_environment_accepts_real_secret():
 
     settings = Settings(
         ENVIRONMENT="production",
+        DATABASE_URL="postgresql+psycopg://sal:test-password@127.0.0.1:5432/sal",
         SECRET_KEY=strong_secret,
     )
 
     assert settings.ENVIRONMENT == "production"
     assert settings.SECRET_KEY == strong_secret
+    assert settings.DATABASE_URL.startswith("postgresql+")
+
+
+def test_production_environment_rejects_sqlite():
+    strong_secret = "a" * 64
+
+    with pytest.raises(ValidationError, match="PostgreSQL"):
+        Settings(
+            ENVIRONMENT="production",
+            DATABASE_URL="sqlite:///./sal.db",
+            SECRET_KEY=strong_secret,
+        )
 
 
 def test_non_production_environment_accepts_explicit_secret():
