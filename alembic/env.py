@@ -7,6 +7,7 @@ from app.database.database import Base, DATABASE_URL
 
 # Import every SQLAlchemy model so Base.metadata is complete.
 from app.models.asset_registry import AssetRegistry
+from app.models.asset_external_identifier import AssetExternalIdentifier
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_passport import AssetPassport
 from app.models.passport_lifecycle_history import PassportLifecycleHistory
