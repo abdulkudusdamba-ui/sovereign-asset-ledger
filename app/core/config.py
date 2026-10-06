@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     SAL_EVIDENCE_STORAGE_ROOT: str = str(
         PROJECT_ROOT / "storage" / "evidence"
     )
+
+    @model_validator(mode="after")
+    def validate_secret_key(self):
+        if (
+            self.ENVIRONMENT.lower() == "production"
+            and self.SECRET_KEY == "development-only-change-this-secret"
+        ):
+            raise ValueError(
+                "SECRET_KEY must be explicitly configured for production"
+            )
+
+        return self
 
 
 @lru_cache
