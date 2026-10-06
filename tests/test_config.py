@@ -42,3 +42,13 @@ def test_non_production_environment_accepts_explicit_secret():
 
     assert settings.ENVIRONMENT == "staging"
     assert settings.SECRET_KEY == "staging-secret-for-tests-only"
+
+
+def test_database_pool_defaults():
+    settings = Settings()
+
+    assert settings.DATABASE_POOL_SIZE == 5
+    assert settings.DATABASE_MAX_OVERFLOW == 10
+    assert settings.DATABASE_POOL_TIMEOUT == 30
+    assert settings.DATABASE_POOL_RECYCLE == 1800
+    assert settings.DATABASE_POOL_PRE_PING is True

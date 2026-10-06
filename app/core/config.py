@@ -32,6 +32,11 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite:///./sal.db"
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 10
+    DATABASE_POOL_TIMEOUT: int = 30
+    DATABASE_POOL_RECYCLE: int = 1800
+    DATABASE_POOL_PRE_PING: bool = True
 
     # Authentication
     SECRET_KEY: str = Field(
