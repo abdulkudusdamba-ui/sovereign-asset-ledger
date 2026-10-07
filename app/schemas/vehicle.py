@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 class VehicleCreate(BaseModel):
@@ -11,6 +12,7 @@ class VehicleCreate(BaseModel):
     engine_number: str
     color: str
     estimated_value: float
+    chassis_number: Optional[str] = None
 
 
 class VehicleResponse(VehicleCreate):

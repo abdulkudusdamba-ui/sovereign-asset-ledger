@@ -38,6 +38,7 @@ def create_vehicle(
         owner=vehicle.owner,
         registration_number=vehicle.registration_number,
         vin=vehicle.vin,
+        chassis_number=vehicle.chassis_number,
         manufacturer=vehicle.manufacturer,
         model=vehicle.model,
         year=vehicle.year,
@@ -92,6 +93,7 @@ def create_vehicle(
             asset_details={
                 "registration_number": new_vehicle.registration_number,
                 "vin": new_vehicle.vin,
+                "chassis_number": new_vehicle.chassis_number,
                 "manufacturer": new_vehicle.manufacturer,
                 "model": new_vehicle.model,
                 "year": new_vehicle.year,
@@ -162,6 +164,7 @@ def update_vehicle(
     vehicle.owner = updated.owner
     vehicle.registration_number = updated.registration_number
     vehicle.vin = updated.vin
+    vehicle.chassis_number = updated.chassis_number
     vehicle.manufacturer = updated.manufacturer
     vehicle.model = updated.model
     vehicle.year = updated.year

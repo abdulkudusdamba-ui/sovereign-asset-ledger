@@ -14,6 +14,8 @@ class Vehicle(Base):
 
     vin = Column(String, unique=True, nullable=False)
 
+    chassis_number = Column(String)
+
     manufacturer = Column(String)
 
     model = Column(String)
