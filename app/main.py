@@ -62,6 +62,7 @@ from app.routers import bank_account
 from app.routers import diamond
 from app.routers import gold
 from app.routers import vehicle
+from app.routers import vehicle_identity
 from app.routers import land
 from app.routers import asset
 from app.routers.user import router as user_router
@@ -95,6 +96,7 @@ app.include_router(asset.router)
 app.include_router(user_router)
 app.include_router(land.router)
 app.include_router(vehicle.router)
+app.include_router(vehicle_identity.router)
 app.include_router(gold.router)
 app.include_router(diamond.router)
 app.include_router(bank_account.router)
