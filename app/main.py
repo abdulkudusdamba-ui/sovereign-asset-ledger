@@ -1,7 +1,5 @@
 from fastapi import FastAPI
 
-from app.database.database import Base, engine
-
 # Core models
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
@@ -72,10 +70,6 @@ app = FastAPI(
     title="Sovereign Asset Ledger",
     version="0.1.0"
 )
-
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
 
 # Register routers

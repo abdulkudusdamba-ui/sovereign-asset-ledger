@@ -22,3 +22,7 @@ sal.db.*
 
 # SAL evidence files (never commit uploaded evidence)
 storage/evidence/
+
+# Generated SAL runtime artifacts
+/qrcodes/*.png
+/certificates/*.pdf
