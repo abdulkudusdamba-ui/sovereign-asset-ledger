@@ -41,6 +41,7 @@ def test_production_environment_requires_provenance_signing_key():
     with pytest.raises(ValidationError, match="SAL_PROVENANCE_SIGNING_KEY"):
         Settings(
             ENVIRONMENT="production",
+            DATABASE_URL="postgresql://localhost/sal",
             SECRET_KEY="a" * 64,
         )
 

@@ -77,6 +77,8 @@ All provenance routes require an authenticated `admin`, `registrar`, or
 
 - `POST /provenance/events/{event_id}/commitment` commits an existing accepted
   audit event and is idempotent per event.
+- `GET /provenance/passports/{passport_id}/commitments` lists the commitments
+  associated with that Passport's lifecycle events.
 - `GET /provenance/commitments/{commitment_id}` returns commitment and permitted
   anchor metadata, including the nonce needed for authorized independent
   verification. It does not return the underlying event snapshots.
@@ -85,6 +87,8 @@ All provenance routes require an authenticated `admin`, `registrar`, or
   checks the provider reference.
 - `POST /provenance/commitments/{commitment_id}/retry` retries a non-confirmed
   anchor; each attempt is recorded.
+- `GET /provenance/commitments/{commitment_id}/attempts` lists anchor outcomes
+  and sanitized failure codes.
 
 `PENDING`, `FAILED`, and `CONFIRMED` refer only to anchoring state. A committed
 SAL event is not described as anchored until the provider returns confirmation.
@@ -120,6 +124,12 @@ Apply the existing Alembic migration chain to the configured database:
 ```sh
 alembic upgrade head
 ```
+
+The existing migration history includes PostgreSQL-specific trigger SQL, so a
+fresh full-chain migration on SQLite is not supported. Existing test fixtures
+create their schema directly; the provenance migration was separately tested
+from the current Alembic head on SQLite. Use the normal PostgreSQL migration
+chain for deployments.
 
 Run the application and tests:
 

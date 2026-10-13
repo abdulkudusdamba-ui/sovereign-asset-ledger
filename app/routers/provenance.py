@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 from app.core.auth import require_role
 from app.database.database import get_db
 from app.models.audit_event import AuditEvent
-from app.models.provenance_commitment import ProvenanceCommitment
-from app.models.provenance_commitment import ProvenanceAnchorAttempt
+from app.models.provenance_commitment import (
+    ProvenanceAnchorAttempt,
+    ProvenanceCommitment,
+)
 from app.services.audit_service import record_audit_event
 from app.services.provenance_service import (
     commitment_metadata,
@@ -35,7 +37,10 @@ def create_event_commitment(
         .first()
     )
     if event is None:
-        raise HTTPException(status_code=404, detail="Accepted SAL event not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Accepted SAL event not found",
+        )
 
     existing = (
         db.query(ProvenanceCommitment)

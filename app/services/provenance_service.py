@@ -37,7 +37,11 @@ def canonical_event_document(event: AuditEvent, sal_id: str | None) -> dict:
     version = 1
     if isinstance(after_data, dict):
         candidate = after_data.get("version")
-        if isinstance(candidate, int) and candidate > 0:
+        if (
+            isinstance(candidate, int)
+            and not isinstance(candidate, bool)
+            and candidate > 0
+        ):
             version = candidate
 
     return {

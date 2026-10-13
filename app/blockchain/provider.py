@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Protocol
 
+from app.core.config import settings
+
 
 @dataclass(frozen=True)
 class AnchorReceipt:
@@ -46,4 +48,6 @@ class MockLedgerProvider:
 
 
 def get_blockchain_provider() -> BlockchainProvider:
-    return MockLedgerProvider()
+    if settings.SAL_BLOCKCHAIN_PROVIDER == "mock":
+        return MockLedgerProvider()
+    raise ValueError("Configured blockchain provider is not implemented")

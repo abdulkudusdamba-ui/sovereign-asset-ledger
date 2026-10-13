@@ -51,6 +51,7 @@ class Settings(BaseSettings):
 
     # Provenance signing is optional for the local mock ledger. Production
     # deployments must inject this through managed secret storage.
+    SAL_BLOCKCHAIN_PROVIDER: str = "mock"
     SAL_PROVENANCE_SIGNING_KEY: str | None = Field(default=None, repr=False)
     SAL_PROVENANCE_SIGNER_KEY_ID: str = "local-development-key"
 
@@ -67,6 +68,11 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "SAL_PROVENANCE_SIGNING_KEY must be at least 32 bytes"
+            )
+
+        if self.SAL_BLOCKCHAIN_PROVIDER != "mock":
+            raise ValueError(
+                "Only the mock blockchain provider is currently implemented"
             )
 
         if self.ENVIRONMENT.lower() == "production":

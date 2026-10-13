@@ -230,9 +230,9 @@ def create_user_and_login(client, test_db, role, email):
     user = User(
         full_name="Provenance Test",
         email=email,
-        ******
         role=role,
     )
+    user.password = hash_password(password)
     test_db.add(user)
     test_db.commit()
     response = client.post(
@@ -240,7 +240,8 @@ def create_user_and_login(client, test_db, role, email):
         data={"username": email, "password": password},
     )
     assert response.status_code == 200
-    return {"Authorization": f"******'access_token']}"}
+    token = response.json()["access_token"]
+    return {"Authorization": "Bearer " + token}
 
 
 def test_authorized_commitment_api_is_idempotent_and_hides_snapshot(client, test_db):
@@ -269,6 +270,16 @@ def test_authorized_commitment_api_is_idempotent_and_hides_snapshot(client, test
     assert first["anchor_status"] == "CONFIRMED"
     assert "Private Owner" not in first_response.text
     assert "before_data" not in first
+    verify_response = client.get(
+        f"/provenance/commitments/{first['commitment_id']}/verify",
+        headers=headers,
+    )
+    attempts_response = client.get(
+        f"/provenance/commitments/{first['commitment_id']}/attempts",
+        headers=headers,
+    )
+    assert verify_response.json()["verified"] is True
+    assert len(attempts_response.json()) == 1
 
 
 def test_provenance_requires_authorization(client, test_db):
