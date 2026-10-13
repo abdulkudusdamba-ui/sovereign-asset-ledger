@@ -37,6 +37,7 @@ from app.models.receipt import Receipt
 from app.models.stock import Stock
 from app.models.user import User
 from app.models.vehicle import Vehicle
+from app.models.vehicle_verification_job import VehicleVerificationJob
 from app.models.webhook_event import WebhookEvent
 
 # Alembic Config object.
