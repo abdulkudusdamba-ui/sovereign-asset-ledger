@@ -111,9 +111,12 @@ Use Python 3.10+ and install the existing requirements:
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt pytest==9.1.1 httpx2==2.13.1
 cp .env.example .env
 ```
+
+`pytest` and `httpx2` are test-only tools needed by the existing test suite;
+they are not runtime dependencies.
 
 In development, the mock ledger needs no signing key. To exercise commitment
 signatures, provide a randomly generated value of at least 32 bytes through
