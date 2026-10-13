@@ -40,6 +40,7 @@ def create_user_and_login(
 def test_create_vehicle_persists_chassis_and_sal_identity(
     client,
     test_db,
+    tmp_path,
 ):
     headers = create_user_and_login(
         client,
@@ -92,3 +93,5 @@ def test_create_vehicle_persists_chassis_and_sal_identity(
     assert registry.owner == "SAL Vehicle Test Owner"
     assert registry.government_verification == "NOT_VERIFIED"
     assert registry.sal_verification == "VERIFIED"
+    assert (tmp_path / "qrcodes" / f"{registry.sal_id}.png").is_file()
+    assert (tmp_path / "certificates" / f"{registry.sal_id}.pdf").is_file()

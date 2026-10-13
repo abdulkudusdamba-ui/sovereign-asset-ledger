@@ -6,7 +6,11 @@ from app.core.config import settings
 celery_app = Celery(
     "sovereign_asset_ledger",
     broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
+    backend=(
+        "cache+memory://"
+        if settings.REDIS_URL.startswith("memory://")
+        else settings.REDIS_URL
+    ),
 )
 
 celery_app.conf.update(

@@ -1,7 +1,5 @@
 from fastapi import FastAPI
 
-from app.database.database import Base, engine
-
 # Core models
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
@@ -27,6 +25,7 @@ from app.models.bank_account import BankAccount
 from app.models.diamond import Diamond
 from app.models.gold import Gold
 from app.models.vehicle import Vehicle
+from app.models.vehicle_verification_job import VehicleVerificationJob
 from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
 from app.models.audit_event import AuditEvent
@@ -68,6 +67,7 @@ from app.routers import diamond
 from app.routers import gold
 from app.routers import vehicle
 from app.routers import vehicle_identity
+from app.routers import vehicle_verification_job
 from app.routers import land
 from app.routers import asset
 from app.routers.user import router as user_router
@@ -77,10 +77,6 @@ app = FastAPI(
     title="Sovereign Asset Ledger",
     version="0.1.0"
 )
-
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
 
 # Register routers
@@ -102,6 +98,7 @@ app.include_router(user_router)
 app.include_router(land.router)
 app.include_router(vehicle.router)
 app.include_router(vehicle_identity.router)
+app.include_router(vehicle_verification_job.router)
 app.include_router(gold.router)
 app.include_router(diamond.router)
 app.include_router(bank_account.router)

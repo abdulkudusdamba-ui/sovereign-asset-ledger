@@ -1,10 +1,21 @@
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+TEST_APPLICATION_DATA_DIR = Path(tempfile.mkdtemp(prefix="sal-pytest-"))
+os.environ["DATABASE_URL"] = (
+    f"sqlite:///{TEST_APPLICATION_DATA_DIR / 'application-import.db'}"
+)
+os.environ["SAL_EVIDENCE_STORAGE_ROOT"] = str(
+    TEST_APPLICATION_DATA_DIR / "evidence"
+)
+os.environ["REDIS_URL"] = "memory://"
 
 import pytest
 from sqlalchemy import create_engine
@@ -72,7 +83,9 @@ def test_db(tmp_path):
 
 
 @pytest.fixture()
-def client(test_db):
+def client(test_db, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     def override_get_db():
         try:
             yield test_db
