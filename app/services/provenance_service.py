@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import json
 import secrets
-from datetime import datetime, timezone
+from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -223,32 +223,39 @@ def verify_commitment(
         )
     digest_matches = False
     if event:
-        document = canonical_event_document(event, asset.sal_id if asset else None)
         try:
+            document = canonical_event_document(event, asset.sal_id if asset else None)
             digest_matches = hmac.compare_digest(
                 calculate_commitment(document, commitment.nonce),
                 commitment.commitment_hash,
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, json.JSONDecodeError):
             digest_matches = False
 
     provider = provider or get_blockchain_provider()
-    anchor_matches = (
-        commitment.anchor_status == "CONFIRMED"
-        and provider.provider_name == commitment.ledger_provider
-        and provider.network_id == commitment.network_id
-        and provider.verify(
-            commitment.commitment_hash,
-            commitment.anchor_reference or "",
+    try:
+        anchor_matches = (
+            commitment.anchor_status == "CONFIRMED"
+            and provider.provider_name == commitment.ledger_provider
+            and provider.network_id == commitment.network_id
+            and provider.verify(
+                commitment.commitment_hash,
+                commitment.anchor_reference or "",
+            )
         )
-    )
+    except Exception:
+        anchor_matches = False
     signature_valid = _signature_valid(commitment)
     return {
         "commitment_id": commitment.commitment_id,
         "commitment_valid": digest_matches,
         "signature_valid": signature_valid,
         "anchor_valid": anchor_matches,
-        "verified": digest_matches and anchor_matches,
+        "verified": (
+            digest_matches
+            and anchor_matches
+            and signature_valid is not False
+        ),
         "legal_ownership_verified": False,
     }
 
