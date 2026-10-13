@@ -29,11 +29,26 @@ def test_production_environment_accepts_real_secret():
         ENVIRONMENT="production",
         DATABASE_URL="postgresql+psycopg://sal:test-password@127.0.0.1:5432/sal",
         SECRET_KEY=strong_secret,
+        SAL_PROVENANCE_SIGNING_KEY="b" * 64,
     )
 
     assert settings.ENVIRONMENT == "production"
     assert settings.SECRET_KEY == strong_secret
     assert settings.DATABASE_URL.startswith("postgresql+")
+
+
+def test_production_environment_requires_provenance_signing_key():
+    with pytest.raises(ValidationError, match="SAL_PROVENANCE_SIGNING_KEY"):
+        Settings(
+            ENVIRONMENT="production",
+            DATABASE_URL="postgresql://localhost/sal",
+            SECRET_KEY="a" * 64,
+        )
+
+
+def test_provenance_signing_key_requires_minimum_length():
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        Settings(SAL_PROVENANCE_SIGNING_KEY="short")
 
 
 def test_production_environment_rejects_sqlite():

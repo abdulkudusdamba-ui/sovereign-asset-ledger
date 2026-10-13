@@ -14,6 +14,10 @@ from app.models.passport_lifecycle_history import PassportLifecycleHistory
 from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
 from app.models.audit_event import AuditEvent
+from app.models.provenance_commitment import (
+    ProvenanceAnchorAttempt,
+    ProvenanceCommitment,
+)
 from app.models.bank_account import BankAccount
 from app.models.bond import Bond
 from app.models.business import Business
