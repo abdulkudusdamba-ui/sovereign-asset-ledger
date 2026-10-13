@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Provenance signing is optional for the local mock ledger. Production
+    # deployments must inject this through managed secret storage.
+    SAL_PROVENANCE_SIGNING_KEY: str | None = Field(default=None, repr=False)
+    SAL_PROVENANCE_SIGNER_KEY_ID: str = "local-development-key"
+
     # Evidence storage
     SAL_EVIDENCE_STORAGE_ROOT: str = str(
         PROJECT_ROOT / "storage" / "evidence"
@@ -56,6 +61,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secret_key(self):
+        if (
+            self.SAL_PROVENANCE_SIGNING_KEY is not None
+            and len(self.SAL_PROVENANCE_SIGNING_KEY.encode("utf-8")) < 32
+        ):
+            raise ValueError(
+                "SAL_PROVENANCE_SIGNING_KEY must be at least 32 bytes"
+            )
+
         if self.ENVIRONMENT.lower() == "production":
             if self.SECRET_KEY == "development-only-change-this-secret":
                 raise ValueError(
@@ -65,6 +78,11 @@ class Settings(BaseSettings):
             if not self.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
                 raise ValueError(
                     "DATABASE_URL must use PostgreSQL in production"
+                )
+
+            if self.SAL_PROVENANCE_SIGNING_KEY is None:
+                raise ValueError(
+                    "SAL_PROVENANCE_SIGNING_KEY must be configured for production"
                 )
 
         return self

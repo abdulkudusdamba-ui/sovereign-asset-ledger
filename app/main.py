@@ -30,6 +30,10 @@ from app.models.vehicle import Vehicle
 from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
 from app.models.audit_event import AuditEvent
+from app.models.provenance_commitment import (
+    ProvenanceAnchorAttempt,
+    ProvenanceCommitment,
+)
 
 # Routers
 from app.routers import asset_transaction
@@ -50,6 +54,7 @@ from app.routers import asset_external_identifier
 from app.routers import asset_passport
 from app.routers import asset_evidence
 from app.routers import audit_event
+from app.routers import provenance
 from app.routers import farm
 from app.routers import crypto_wallet
 from app.routers import intellectual_property
@@ -113,6 +118,7 @@ app.include_router(asset_external_identifier.router)
 app.include_router(asset_passport.router)
 app.include_router(asset_evidence.router)
 app.include_router(audit_event.router)
+app.include_router(provenance.router)
 
 
 @app.get("/")
