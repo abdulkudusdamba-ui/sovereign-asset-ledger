@@ -31,6 +31,7 @@ def create_asset_registry_record(
     owner: str,
     estimated_value: float = 0.0,
     status: str = "Active",
+    sal_verification: str = "VERIFIED",
 ):
     """
     Create a SAL Master Registry record.
@@ -50,7 +51,7 @@ def create_asset_registry_record(
         estimated_value=estimated_value,
         status=status,
 
-        sal_verification="VERIFIED",
+        sal_verification=sal_verification,
         government_verification="NOT_VERIFIED",
         blockchain_status="PENDING",
     )
