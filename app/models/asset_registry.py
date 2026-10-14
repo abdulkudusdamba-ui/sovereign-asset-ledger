@@ -51,6 +51,13 @@ class AssetRegistry(Base):
         default="Active"
     )
 
+    version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+
     # SAL verification means the asset has passed
     # SAL's own registration/verification process.
     #

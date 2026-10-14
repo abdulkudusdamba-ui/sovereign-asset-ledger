@@ -30,6 +30,7 @@ from app.models.vehicle import Vehicle
 from app.models.asset_evidence import AssetEvidence
 from app.models.asset_evidence_review_history import AssetEvidenceReviewHistory
 from app.models.audit_event import AuditEvent
+from app.models.offline_sync import OfflineSyncConflict, OfflineSyncOperation
 
 # Routers
 from app.routers import asset_transaction
@@ -65,6 +66,7 @@ from app.routers import vehicle
 from app.routers import vehicle_identity
 from app.routers import land
 from app.routers import asset
+from app.routers import offline_sync
 from app.routers.user import router as user_router
 
 
@@ -93,6 +95,7 @@ app.include_router(verification.router)
 app.include_router(government_verification.router)
 app.include_router(dashboard_router)
 app.include_router(asset.router)
+app.include_router(offline_sync.router)
 app.include_router(user_router)
 app.include_router(land.router)
 app.include_router(vehicle.router)
