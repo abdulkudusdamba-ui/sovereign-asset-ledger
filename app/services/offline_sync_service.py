@@ -118,6 +118,7 @@ def _result(
         "status": status,
         "record_id": None,
         "sal_id": None,
+        "ownership_status": None,
         "conflict_id": None,
         "message": message,
         **fields,
@@ -208,6 +209,7 @@ def _create_conflict(
     result: dict[str, Any],
     identifier_type: str | None = None,
     identifier_value: str | None = None,
+    update_operation_result: bool = True,
 ) -> dict[str, Any]:
     conflict = (
         db.query(OfflineSyncConflict)
@@ -230,7 +232,8 @@ def _create_conflict(
         db.add(conflict)
         db.flush()
     result["conflict_id"] = conflict.id
-    _set_result(operation, result)
+    if update_operation_result:
+        _set_result(operation, result)
     _audit(
         db,
         user=user,
@@ -309,6 +312,7 @@ def _persist_invalid_operation(
                     "conflict",
                     "Operation identifier was already used for different data",
                 ),
+                update_operation_result=False,
             )
         raise
     return result
@@ -377,6 +381,7 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
                 "conflict",
                 "Operation identifier was already used for different data",
             ),
+            update_operation_result=False,
         )
 
     try:
@@ -497,6 +502,7 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
             "Asset submission recorded; ownership and verification remain pending",
             record_id=record.id,
             sal_id=registry.sal_id,
+            ownership_status="UNVERIFIED",
         )
         _record_operation(
             db,
@@ -556,6 +562,7 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
                     "conflict",
                     "Operation identifier was already used for different data",
                 ),
+                update_operation_result=False,
             )
         duplicate = _find_duplicate(db, asset_type, data)
         if duplicate is not None:
@@ -600,7 +607,26 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
 
 
 def process_batch(db: Session, user: User, operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [_process_operation(db, user, operation) for operation in operations]
+    results = []
+    for operation in operations:
+        if isinstance(operation, dict):
+            results.append(_process_operation(db, user, operation))
+            continue
+        reference = str(uuid4())
+        _audit(
+            db,
+            user=user,
+            action="offline.operation_rejected",
+            operation_id=reference,
+            result="rejected",
+            reason="Offline operation payload was not an object",
+            metadata={"validation_error": "invalid_operation_shape"},
+        )
+        db.commit()
+        results.append(
+            _result(None, None, "rejected", "Each operation must be an object")
+        )
+    return results
 
 
 def list_conflicts(

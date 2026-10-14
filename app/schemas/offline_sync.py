@@ -18,7 +18,7 @@ class OfflineOperationInput(BaseModel):
 class OfflineSyncBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    operations: list[dict[str, Any]] = Field(min_length=1, max_length=100)
+    operations: list[Any] = Field(min_length=1, max_length=100)
 
 
 class OfflineConflictResolution(BaseModel):
@@ -33,6 +33,7 @@ class OfflineOperationResult(BaseModel):
     status: str
     record_id: int | None = None
     sal_id: str | None = None
+    ownership_status: str | None = None
     conflict_id: int | None = None
     message: str
 
