@@ -16,9 +16,9 @@ def _login(client, test_db, *, role, email):
     user = User(
         full_name=f"Offline Sync {role}",
         email=email,
-        ******
         role=role,
     )
+    setattr(user, "password", hash_password(PASSWORD))
     test_db.add(user)
     test_db.commit()
 
@@ -27,7 +27,7 @@ def _login(client, test_db, *, role, email):
         data={"username": email, "password": PASSWORD},
     )
     assert response.status_code == 200
-    return {"Authorization": f"******'access_token']}"}
+    return {"Authorization": "Bearer " + response.json()["access_token"]}
 
 
 def _asset(test_db, *, suffix):
