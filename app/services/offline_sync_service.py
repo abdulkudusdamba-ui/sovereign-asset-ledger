@@ -440,10 +440,15 @@ def synchronize_batch(db: Session, *, actor_id: int, operations: list) -> list[d
                 asset=asset,
                 changes=changes,
             )
-        except OfflineSyncConflictStateError as exc:
+        except OfflineSyncConflictStateError:
             operation.status = "REJECTED"
             results.append(
-                _result(operation_id, "REJECTED", operation.status, str(exc))
+                _result(
+                    operation_id,
+                    "REJECTED",
+                    operation.status,
+                    "Changes could not be applied",
+                )
             )
             continue
 
