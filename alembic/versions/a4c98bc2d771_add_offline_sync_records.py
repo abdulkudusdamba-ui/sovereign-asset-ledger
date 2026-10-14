@@ -41,11 +41,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("operation_id"),
     )
     op.create_index(
-        "ix_offline_sync_operations_operation_id",
-        "offline_sync_operations",
-        ["operation_id"],
-    )
-    op.create_index(
         "ix_offline_sync_operations_actor_id",
         "offline_sync_operations",
         ["actor_id"],
@@ -117,10 +112,6 @@ def downgrade() -> None:
     )
     op.drop_index(
         "ix_offline_sync_operations_actor_id",
-        table_name="offline_sync_operations",
-    )
-    op.drop_index(
-        "ix_offline_sync_operations_operation_id",
         table_name="offline_sync_operations",
     )
     op.drop_table("offline_sync_operations")

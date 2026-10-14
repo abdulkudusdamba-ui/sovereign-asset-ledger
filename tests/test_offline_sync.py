@@ -323,6 +323,12 @@ def test_sync_requires_authorized_user_and_bounds_batch(client, test_db):
         role="viewer",
         email="offline-viewer@sal.test",
     )
+    admin_headers = _login(
+        client,
+        test_db,
+        role="admin",
+        email="offline-batch-limit@sal.test",
+    )
     asset = _asset(test_db, suffix="808")
 
     unauthorized = client.post(
@@ -342,7 +348,7 @@ def test_sync_requires_authorized_user_and_bounds_batch(client, test_db):
                 for _ in range(101)
             ]
         },
-        headers=viewer_headers,
+        headers=admin_headers,
     )
 
     assert unauthorized.status_code == 403

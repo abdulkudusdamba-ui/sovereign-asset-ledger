@@ -8,7 +8,7 @@ class OfflineSyncOperation(Base):
     __tablename__ = "offline_sync_operations"
 
     id = Column(Integer, primary_key=True, index=True)
-    operation_id = Column(String(64), nullable=False, unique=True, index=True)
+    operation_id = Column(String(64), nullable=False, unique=True)
     actor_id = Column(Integer, nullable=False, index=True)
     asset_registry_id = Column(
         Integer,

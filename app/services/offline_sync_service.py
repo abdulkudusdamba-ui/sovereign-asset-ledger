@@ -179,6 +179,17 @@ def _record_asset_update(
     asset: AssetRegistry,
     changes: dict,
 ) -> None:
+    if "identifier" in changes:
+        expected_asset_type = {
+            "VIN": "Vehicle",
+            "PARCEL_NUMBER": "Land",
+        }[changes["identifier"]["type"]]
+        if asset.asset_type != expected_asset_type:
+            raise OfflineSyncConflictStateError(
+                f"{changes['identifier']['type']} identifiers require a "
+                f"{expected_asset_type} asset"
+            )
+
     before_version = asset.version
     changed_fields = []
 
@@ -370,6 +381,23 @@ def synchronize_batch(db: Session, *, actor_id: int, operations: list) -> list[d
 
         operation.asset_registry_id = asset.id
         reason = None
+        if "identifier" in changes:
+            expected_asset_type = {
+                "VIN": "Vehicle",
+                "PARCEL_NUMBER": "Land",
+            }[changes["identifier"]["type"]]
+            if asset.asset_type != expected_asset_type:
+                operation.status = "REJECTED"
+                results.append(
+                    _result(
+                        operation_id,
+                        "REJECTED",
+                        operation.status,
+                        f"{changes['identifier']['type']} identifiers require a "
+                        f"{expected_asset_type} asset",
+                    )
+                )
+                continue
         if changes.get("owner") is not None and changes["owner"] != asset.owner:
             reason = "OWNERSHIP_REVIEW"
         elif item.expected_version != asset.version:
