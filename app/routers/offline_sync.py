@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -52,7 +53,13 @@ class OfflineSyncRequestLimitRoute(APIRoute):
                         content={"detail": "Offline sync request is too large"},
                     )
             request._body = bytes(body)
-            return await original_handler(request)
+            try:
+                return await original_handler(request)
+            except RequestValidationError:
+                return JSONResponse(
+                    status_code=422,
+                    content={"detail": "Offline sync request is invalid"},
+                )
 
         return limited_handler
 

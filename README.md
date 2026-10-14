@@ -18,9 +18,10 @@ DATABASE_URL=sqlite:////tmp/sal-codespaces.db alembic upgrade head
 DATABASE_URL=sqlite:////tmp/sal-codespaces.db uvicorn app.main:app --reload
 ```
 
-Run the complete automated test suite with:
+Install the test runner and run the complete automated test suite with:
 
 ```bash
+python -m pip install pytest
 pytest
 ```
 
@@ -68,9 +69,11 @@ Example request (the user must have an admin or registrar role):
 
 ```http
 POST /offline-sync/batches
-Use the bearer token returned by `/users/login` in the `Authorization` header. token from login]
 Content-Type: application/json
 ```
+
+Send the access token returned by `POST /users/login` as a bearer token in
+the `Authorization` header.
 
 ```json
 {

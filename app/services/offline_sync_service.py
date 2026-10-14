@@ -1,16 +1,16 @@
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.enums.asset_types import AssetType
 from app.models.asset import Asset
-from app.models.asset_registry import AssetRegistry
 from app.models.diamond import Diamond
 from app.models.gold import Gold
 from app.models.land import Land
@@ -22,7 +22,6 @@ from app.services.asset_service import create_asset_registry_record
 from app.services.audit_service import record_audit_event
 
 
-MAX_BATCH_SIZE = 100
 ASSET_MODELS = {
     "asset": (Asset, AssetType.OTHER),
     "land": (Land, AssetType.LAND),
@@ -219,6 +218,7 @@ def _create_conflict(
         )
         .first()
     )
+    is_repeat = conflict is not None
     if conflict is None:
         conflict = OfflineSyncConflict(
             operation_record_id=operation.id,
@@ -237,10 +237,18 @@ def _create_conflict(
     _audit(
         db,
         user=user,
-        action="offline.conflict_detected",
+        action=(
+            "offline.duplicate_submission"
+            if is_repeat
+            else "offline.conflict_detected"
+        ),
         operation_id=operation_id,
-        result="conflict",
-        reason="Offline submission requires authorized review",
+        result="duplicate_submission" if is_repeat else "conflict",
+        reason=(
+            "Repeated conflicting offline operation"
+            if is_repeat
+            else "Offline submission requires authorized review"
+        ),
         metadata={"conflict_id": conflict.id, "conflict_type": conflict_type},
     )
     db.commit()
@@ -318,7 +326,12 @@ def _persist_invalid_operation(
     return result
 
 
-def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str, Any]:
+def _process_operation(
+    db: Session,
+    user: User,
+    raw: dict[str, Any],
+    retry_count: int = 0,
+) -> dict[str, Any]:
     raw_operation_id = raw.get("operation_id")
     try:
         operation_id = str(UUID(raw_operation_id))
@@ -341,7 +354,9 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
             "A valid UUID operation_id is required",
         )
 
-    request_hash = _hash(raw)
+    normalized_raw = dict(raw)
+    normalized_raw["operation_id"] = operation_id
+    request_hash = _hash(normalized_raw)
     raw_asset_type = raw.get("asset_type")
     asset_type = (
         raw_asset_type.strip().lower()
@@ -453,15 +468,53 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
             "conflict",
             "A matching unique identifier already exists",
         )
-        operation = _record_operation(
-            db,
-            user=user,
-            operation_id=operation_id,
-            asset_type=asset_type,
-            request_hash=request_hash,
-            payload=raw,
-            result=result,
-        )
+        try:
+            operation = _record_operation(
+                db,
+                user=user,
+                operation_id=operation_id,
+                asset_type=asset_type,
+                request_hash=request_hash,
+                payload=raw,
+                result=result,
+            )
+        except IntegrityError:
+            db.rollback()
+            existing_operation = (
+                db.query(OfflineSyncOperation)
+                .filter_by(actor_id=user.id, operation_id=operation_id)
+                .first()
+            )
+            if existing_operation is None:
+                raise
+            if existing_operation.request_hash == request_hash:
+                _audit(
+                    db,
+                    user=user,
+                    action="offline.duplicate_submission",
+                    operation_id=operation_id,
+                    result="duplicate_submission",
+                    reason="Repeated concurrent offline operation",
+                )
+                db.commit()
+                return json.loads(existing_operation.result_payload)
+            return _create_conflict(
+                db,
+                user=user,
+                operation=existing_operation,
+                operation_id=operation_id,
+                asset_type=asset_type,
+                request_hash=request_hash,
+                payload=raw,
+                conflict_type="IDEMPOTENCY_KEY_REUSE",
+                result=_result(
+                    operation_id,
+                    asset_type,
+                    "conflict",
+                    "Operation identifier was already used for different data",
+                ),
+                update_operation_result=False,
+            )
         return _create_conflict(
             db,
             user=user,
@@ -604,6 +657,85 @@ def _process_operation(db: Session, user: User, raw: dict[str, Any]) -> dict[str
             payload=raw,
             message="Asset could not be created because a database constraint was violated",
         )
+    except OperationalError:
+        db.rollback()
+        existing = (
+            db.query(OfflineSyncOperation)
+            .filter_by(actor_id=user.id, operation_id=operation_id)
+            .first()
+        )
+        if existing is not None:
+            if existing.request_hash == request_hash:
+                _audit(
+                    db,
+                    user=user,
+                    action="offline.duplicate_submission",
+                    operation_id=operation_id,
+                    result="duplicate_submission",
+                    reason="Repeated concurrent offline operation",
+                )
+                db.commit()
+                return json.loads(existing.result_payload)
+            return _create_conflict(
+                db,
+                user=user,
+                operation=existing,
+                operation_id=operation_id,
+                asset_type=asset_type,
+                request_hash=request_hash,
+                payload=raw,
+                conflict_type="IDEMPOTENCY_KEY_REUSE",
+                result=_result(
+                    operation_id,
+                    asset_type,
+                    "conflict",
+                    "Operation identifier was already used for different data",
+                ),
+                update_operation_result=False,
+            )
+        duplicate = _find_duplicate(db, asset_type, data)
+        if duplicate is not None:
+            identifier_type, identifier_value, _ = duplicate
+            result = _result(
+                operation_id,
+                asset_type,
+                "conflict",
+                "A matching unique identifier already exists",
+            )
+            operation = _record_operation(
+                db,
+                user=user,
+                operation_id=operation_id,
+                asset_type=asset_type,
+                request_hash=request_hash,
+                payload=raw,
+                result=result,
+            )
+            return _create_conflict(
+                db,
+                user=user,
+                operation=operation,
+                operation_id=operation_id,
+                asset_type=asset_type,
+                request_hash=request_hash,
+                payload=raw,
+                conflict_type="DUPLICATE_IDENTIFIER",
+                identifier_type=identifier_type,
+                identifier_value=str(identifier_value)[:200],
+                result=result,
+            )
+        if retry_count < 2:
+            time.sleep(0.05 * (2**retry_count))
+            return _process_operation(db, user, raw, retry_count + 1)
+        return _persist_invalid_operation(
+            db,
+            user=user,
+            operation_id=operation_id,
+            asset_type=asset_type,
+            request_hash=request_hash,
+            payload=raw,
+            message="Asset creation is temporarily unavailable; retry this operation",
+        )
 
 
 def process_batch(db: Session, user: User, operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -673,11 +805,6 @@ def resolve_conflict(
         .first()
     )
     if operation is not None:
-        result = json.loads(operation.result_payload)
-        result["status"] = "resolved"
-        result["message"] = "Conflict was reviewed; no asset was changed"
-        result["resolution"] = resolution
-        _set_result(operation, result)
         _audit(
             db,
             user=user,

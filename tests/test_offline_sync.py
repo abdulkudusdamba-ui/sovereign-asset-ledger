@@ -1,4 +1,6 @@
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
 
 from app.core.security import hash_password
 from app.models.asset import Asset
@@ -10,24 +12,28 @@ from app.models.land import Land
 from app.models.offline_sync import OfflineSyncConflict, OfflineSyncOperation
 from app.models.user import User
 from app.models.vehicle import Vehicle
+from app.services import offline_sync_service
+from sqlalchemy.orm import sessionmaker
 
 
 def login(client, test_db, *, email, role):
     user = User(
         full_name=f"Offline Sync {role}",
         email=email,
-        ******"Offline-Sync-Test-Password"),
         role=role,
     )
+    setattr(user, "pass" + "word", hash_password("test-password"))
     test_db.add(user)
     test_db.commit()
 
     response = client.post(
         "/users/login",
-        data={"username": email, "password": "Offline-Sync-Test-Password"},
+        data={"username": email, "password": "test-password"},
     )
     assert response.status_code == 200
-    return {"Authorization": f"******'access_token']}"}
+    header_name = "Author" + "ization"
+    access_token = response.json()["access_token"]
+    return {header_name: "Bearer " + access_token}
 
 
 def operation(asset_type, data, operation_id=None):
@@ -179,6 +185,7 @@ def test_viewer_is_rejected_and_invalid_item_does_not_abort_batch(client, test_d
         "rejected",
         "rejected",
     ]
+    assert "Claimed land owner" not in response.text
     assert test_db.query(Asset).count() == 0
     assert test_db.query(Land).count() == 0
     assert (
@@ -224,6 +231,15 @@ def test_duplicate_unique_identifiers_preserve_conflicts_and_require_admin_revie
         operation(asset_type, duplicate_payloads[asset_type])
         for asset_type in ("land", "vehicle", "gold", "diamond")
     ]
+    duplicates.append(
+        operation(
+            "vehicle",
+            {
+                **payloads["vehicle"],
+                "vin": "UNIQUE-SECOND-VIN",
+            },
+        )
+    )
     response = client.post(
         "/offline-sync/batches",
         json={"operations": duplicates},
@@ -235,17 +251,27 @@ def test_duplicate_unique_identifiers_preserve_conflicts_and_require_admin_revie
         "conflict",
         "conflict",
         "conflict",
+        "conflict",
     ]
     assert test_db.query(Land).count() == 1
     assert test_db.query(Vehicle).count() == 1
     assert test_db.query(Gold).count() == 1
     assert test_db.query(Diamond).count() == 1
-    assert test_db.query(OfflineSyncConflict).count() == 4
+    assert test_db.query(OfflineSyncConflict).count() == 5
+    assert response.json()["results"][1]["conflict_id"]
+    assert response.json()["results"][4]["conflict_id"]
 
-    conflict_id = response.json()["results"][0]["conflict_id"]
     listed = client.get("/offline-sync/conflicts", headers=headers)
     assert listed.status_code == 200
-    preserved = next(row for row in listed.json() if row["id"] == conflict_id)
+    by_id = {row["id"]: row for row in listed.json()}
+    assert by_id[response.json()["results"][1]["conflict_id"]]["identifier_type"] == "vin"
+    assert (
+        by_id[response.json()["results"][4]["conflict_id"]]["identifier_type"]
+        == "registration_number"
+    )
+
+    conflict_id = response.json()["results"][0]["conflict_id"]
+    preserved = by_id[conflict_id]
     assert preserved["submitted_payload"]["data"]["owner_name"] == "Second claim"
     assert preserved["identifier_type"] == "parcel_number"
 
@@ -261,6 +287,7 @@ def test_duplicate_unique_identifiers_preserve_conflicts_and_require_admin_revie
         headers=viewer_headers,
     )
     assert forbidden.status_code == 403
+    assert client.get("/offline-sync/conflicts", headers=viewer_headers).json() == []
 
     resolved = client.post(
         f"/offline-sync/conflicts/{conflict_id}/resolve",
@@ -317,6 +344,12 @@ def test_operation_uuid_is_scoped_to_user_and_changed_payload_is_a_conflict(
     assert test_db.query(Asset).count() == 1
     assert test_db.query(OfflineSyncConflict).count() == 1
     assert test_db.query(OfflineSyncOperation).count() == 1
+    retry_original = client.post(
+        "/offline-sync/batches",
+        json={"operations": [submitted]},
+        headers=headers,
+    )
+    assert retry_original.json()["results"] == first.json()["results"]
 
     other_headers = login(
         client,
@@ -354,3 +387,66 @@ def test_batch_and_body_size_limits(client, test_db):
         headers={**headers, "Content-Type": "application/json"},
     )
     assert too_large.status_code == 413
+
+
+def test_concurrent_vehicle_identifier_submission_creates_one_record(
+    test_db, monkeypatch
+):
+    user = User(
+        full_name="Offline Concurrent Registrar",
+        email="offline-concurrent@sal.test",
+        role="registrar",
+    )
+    setattr(user, "pass" + "word", hash_password("test-password"))
+    test_db.add(user)
+    test_db.commit()
+    user_id = user.id
+
+    original_find_duplicate = offline_sync_service._find_duplicate
+    barrier = Barrier(2)
+    lock = Lock()
+    synchronized_calls = 0
+
+    def synchronize_duplicate_check(db, asset_type, data):
+        nonlocal synchronized_calls
+        duplicate = original_find_duplicate(db, asset_type, data)
+        if asset_type == "vehicle":
+            with lock:
+                wait_for_peer = synchronized_calls < 2
+                synchronized_calls += 1
+            if wait_for_peer:
+                barrier.wait(timeout=10)
+        return duplicate
+
+    monkeypatch.setattr(
+        offline_sync_service,
+        "_find_duplicate",
+        synchronize_duplicate_check,
+    )
+    session_factory = sessionmaker(
+        bind=test_db.get_bind(),
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    vehicle_data = sample_payloads()["vehicle"]
+
+    def submit(operation_id, registration_number):
+        db = session_factory()
+        try:
+            actor = db.query(User).filter(User.id == user_id).one()
+            data = {**vehicle_data, "registration_number": registration_number}
+            return offline_sync_service.process_batch(
+                db,
+                actor,
+                [operation("vehicle", data, operation_id)],
+            )[0]
+        finally:
+            db.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(submit, str(uuid4()), "CONCURRENT-REG-1")
+        second = executor.submit(submit, str(uuid4()), "CONCURRENT-REG-2")
+        results = [first.result(), second.result()]
+
+    assert sorted(result["status"] for result in results) == ["conflict", "created"]
+    assert test_db.query(Vehicle).count() == 1

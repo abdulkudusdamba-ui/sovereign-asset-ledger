@@ -3,9 +3,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-ASSET_TYPES = ("asset", "land", "vehicle", "gold", "diamond")
-
-
 class OfflineOperationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
