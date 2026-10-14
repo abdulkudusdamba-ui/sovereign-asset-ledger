@@ -31,13 +31,20 @@ def sync_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(SYNC_ROLES)),
 ):
-    results = synchronize_batch(
-        db,
-        actor_id=current_user.id,
-        operations=request.operations,
-    )
-    db.commit()
-    return {"results": results}
+    try:
+        results = synchronize_batch(
+            db,
+            actor_id=current_user.id,
+            operations=request.operations,
+        )
+        db.commit()
+        return {"results": results}
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Offline synchronization failed",
+        ) from None
 
 
 @router.post(
@@ -67,3 +74,9 @@ def resolve_sync_conflict(
     except OfflineSyncConflictStateError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Offline synchronization conflict review failed",
+        ) from None
